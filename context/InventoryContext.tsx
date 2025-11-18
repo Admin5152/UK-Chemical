@@ -94,6 +94,12 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
 
   const fetchUserData = async (userId: string, userEmail?: string) => {
     try {
+      // --- ADMIN IDENTITY CHECK ---
+      // Normalize the email and check against the hardcoded admin email
+      const ADMIN_EMAIL = "sagyeimensah@yahoo.com";
+      const isAdminUser = userEmail && userEmail.trim().toLowerCase() === ADMIN_EMAIL.toLowerCase();
+      // ----------------------------
+
       let { data, error } = await supabase.from('profiles').select('*').eq('id', userId).single();
       
       // FAIL-SAFE: If profile doesn't exist (trigger failed), try to create it manually
@@ -104,7 +110,8 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
           .insert([{ 
             id: userId, 
             email: userEmail, 
-            role: 'STAFF', 
+            // If this is the admin email, create as MANAGER immediately
+            role: isAdminUser ? 'MANAGER' : 'STAFF', 
             full_name: 'Staff Member' 
           }])
           .select()
@@ -121,15 +128,19 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       }
 
       if (data) {
-        // --- ADMIN OVERRIDE LOGIC ---
-        const MANAGER_EMAIL = "sagyeimensah@yahoo.com";
-        
-        if (userEmail === MANAGER_EMAIL && data.role !== 'MANAGER') {
-          console.log("Auto-promoting admin user...");
-          await supabase.from('profiles').update({ role: 'MANAGER' }).eq('id', userId);
-          data.role = 'MANAGER';
+        // --- ROLE ENFORCEMENT ---
+        // If email matches admin but role is not manager, Force Update DB and Local State
+        if (isAdminUser) {
+          console.log("Admin Identity Verified. Enforcing MANAGER privileges.");
+          data.role = 'MANAGER'; // Force local object
+          
+          // Update DB asynchronously to fix it permanently
+          supabase.from('profiles').update({ role: 'MANAGER' }).eq('id', userId).then(({ error }) => {
+            if (error) console.error("Failed to sync admin role to DB:", error);
+            else console.log("DB Role updated to MANAGER");
+          });
         }
-        // -----------------------------
+        // ------------------------
 
         setCurrentUser({
           id: data.id,
@@ -138,12 +149,12 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
           role: data.role as UserRole
         });
       } else if (userEmail) {
-        // Fallback if database interaction completely fails but Auth is valid
+        // Absolute Fallback if database is unreachable but Auth succeeded
         setCurrentUser({
           id: userId,
           name: 'User',
           email: userEmail,
-          role: 'STAFF'
+          role: isAdminUser ? 'MANAGER' : 'STAFF'
         });
       }
     } catch (e) {
