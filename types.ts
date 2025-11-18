@@ -1,0 +1,51 @@
+export type UserRole = 'MANAGER' | 'STAFF';
+
+export type Location = 'Warehouse' | 'Main Office';
+
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+  role: UserRole;
+}
+
+export interface Product {
+  id: string;
+  name: string;
+  category: string;
+  unit: string;
+  qtyWarehouse: number;
+  qtyOffice: number;
+  reorderLevel: number;
+  productionDate: string;
+  expirationDate: string;
+  origin: string;
+  deliveryAgent: string;
+  price: number;
+  supplier: string;
+}
+
+export interface LogEntry {
+  id: string;
+  date: string;
+  action: 'ADD' | 'REMOVE' | 'TRANSFER' | 'CREATE' | 'UPDATE' | 'DELETE';
+  productName: string;
+  details: string;
+  performedBy: string;
+}
+
+export interface Notification {
+  id: string;
+  title: string;
+  message: string;
+  type: 'WARNING' | 'DANGER' | 'INFO';
+  date: string;
+  isRead: boolean;
+}
+
+export interface FilterState {
+  search: string;
+  category: string;
+  location: 'ALL' | Location;
+  stockStatus: 'ALL' | 'LOW' | 'NORMAL' | 'EXPIRED';
+}

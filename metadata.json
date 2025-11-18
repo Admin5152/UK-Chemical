@@ -1,0 +1,5 @@
+{
+  "name": "UKChem Inventory System",
+  "description": "A professional inventory management system for UK Chemicals, featuring multi-location tracking, low stock alerts, expiry management, and role-based access.",
+  "requestFramePermissions": []
+}
