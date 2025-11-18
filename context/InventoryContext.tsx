@@ -95,13 +95,25 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
   const fetchUserData = async (userId: string, userEmail?: string) => {
     try {
       // --- ADMIN IDENTITY CHECK ---
-      // Normalize the email and check against the hardcoded admin email
       const ADMIN_EMAIL = "sagyeimensah@yahoo.com";
       const isAdminUser = userEmail && userEmail.trim().toLowerCase() === ADMIN_EMAIL.toLowerCase();
-      // ----------------------------
 
       let { data, error } = await supabase.from('profiles').select('*').eq('id', userId).single();
       
+      // Handle "Table Missing" error gracefully
+      if (error && error.message && error.message.includes('Could not find the table')) {
+        console.error("CRITICAL DB ERROR: 'profiles' table is missing. Run the SQL script.");
+        if (isAdminUser) {
+          setCurrentUser({
+            id: userId,
+            name: 'Manager (DB Offline)',
+            email: userEmail!,
+            role: 'MANAGER'
+          });
+          return;
+        }
+      }
+
       // FAIL-SAFE: If profile doesn't exist (trigger failed), try to create it manually
       if (error && error.code === 'PGRST116' && userEmail) {
         console.log("Profile missing, attempting fallback creation...");
@@ -110,7 +122,6 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
           .insert([{ 
             id: userId, 
             email: userEmail, 
-            // If this is the admin email, create as MANAGER immediately
             role: isAdminUser ? 'MANAGER' : 'STAFF', 
             full_name: 'Staff Member' 
           }])
@@ -121,26 +132,29 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
           data = newData;
           error = null;
         } else if (insertError) {
-          console.error("Fallback creation failed:", insertError.message);
+           // Check for table missing error again during insert
+           if (insertError.message?.includes('Could not find the table')) {
+             console.error("Cannot create profile: Table missing.");
+             if (isAdminUser) {
+               setCurrentUser({ id: userId, name: 'Manager', email: userEmail, role: 'MANAGER' });
+               return;
+             }
+           }
+           console.error("Fallback creation failed:", insertError.message);
         }
-      } else if (error) {
-        console.error("Error fetching profile:", error.message || JSON.stringify(error));
       }
 
       if (data) {
         // --- ROLE ENFORCEMENT ---
-        // If email matches admin but role is not manager, Force Update DB and Local State
-        if (isAdminUser) {
+        if (isAdminUser && data.role !== 'MANAGER') {
           console.log("Admin Identity Verified. Enforcing MANAGER privileges.");
           data.role = 'MANAGER'; // Force local object
           
           // Update DB asynchronously to fix it permanently
           supabase.from('profiles').update({ role: 'MANAGER' }).eq('id', userId).then(({ error }) => {
             if (error) console.error("Failed to sync admin role to DB:", error);
-            else console.log("DB Role updated to MANAGER");
           });
         }
-        // ------------------------
 
         setCurrentUser({
           id: data.id,
@@ -148,13 +162,13 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
           email: data.email,
           role: data.role as UserRole
         });
-      } else if (userEmail) {
-        // Absolute Fallback if database is unreachable but Auth succeeded
+      } else if (userEmail && isAdminUser) {
+        // Last resort fallback
         setCurrentUser({
           id: userId,
-          name: 'User',
+          name: 'Manager',
           email: userEmail,
-          role: isAdminUser ? 'MANAGER' : 'STAFF'
+          role: 'MANAGER'
         });
       }
     } catch (e) {
@@ -165,7 +179,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
   const fetchAllData = async () => {
     try {
       // Fetch Products
-      const { data: prodData } = await supabase.from('products').select('*');
+      const { data: prodData, error: prodError } = await supabase.from('products').select('*');
       if (prodData) {
         const mappedProducts: Product[] = prodData.map((p: any) => ({
           id: p.id,
@@ -183,6 +197,8 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
           supplier: p.supplier
         }));
         setProducts(mappedProducts);
+      } else if (prodError) {
+         console.warn("Error fetching products:", prodError.message);
       }
 
       // Fetch Suppliers
