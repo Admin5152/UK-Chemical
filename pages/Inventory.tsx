@@ -203,7 +203,7 @@ export const Inventory = () => {
       </div>
 
       {/* Modals */}
-      {isProductModalOpen && (
+      {isProductModalOpen && currentUser?.role === 'MANAGER' && (
         <ProductFormModal 
           isOpen={isProductModalOpen} 
           onClose={() => setIsProductModalOpen(false)} 
@@ -279,19 +279,19 @@ const ProductFormModal = ({ isOpen, onClose, existingProduct, onSubmit }: any) =
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Initial Qty (Warehouse)</label>
-              <input required type="number" className="w-full p-2 border rounded-md" value={formData.qtyWarehouse} onChange={e => setFormData({...formData, qtyWarehouse: e.target.value})} />
+              <input required type="number" className="w-full p-2 border rounded-md" value={formData.qtyWarehouse} onChange={e => setFormData({...formData, qtyWarehouse: Number(e.target.value)})} />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Initial Qty (Office)</label>
-              <input required type="number" className="w-full p-2 border rounded-md" value={formData.qtyOffice} onChange={e => setFormData({...formData, qtyOffice: e.target.value})} />
+              <input required type="number" className="w-full p-2 border rounded-md" value={formData.qtyOffice} onChange={e => setFormData({...formData, qtyOffice: Number(e.target.value)})} />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1 text-orange-600">Reorder Threshold</label>
-              <input required type="number" className="w-full p-2 border border-orange-200 rounded-md focus:ring-orange-500" value={formData.reorderLevel} onChange={e => setFormData({...formData, reorderLevel: e.target.value})} />
+              <input required type="number" className="w-full p-2 border border-orange-200 rounded-md focus:ring-orange-500" value={formData.reorderLevel} onChange={e => setFormData({...formData, reorderLevel: Number(e.target.value)})} />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Price per Unit</label>
-              <input required type="number" step="0.01" className="w-full p-2 border rounded-md" value={formData.price} onChange={e => setFormData({...formData, price: e.target.value})} />
+              <input required type="number" step="0.01" className="w-full p-2 border rounded-md" value={formData.price} onChange={e => setFormData({...formData, price: Number(e.target.value)})} />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Production Date</label>

@@ -25,6 +25,14 @@ export interface Product {
   supplier: string;
 }
 
+export interface Supplier {
+  id: string;
+  companyName: string;
+  contactName: string;
+  email: string;
+  phone: string;
+}
+
 export interface LogEntry {
   id: string;
   date: string;
