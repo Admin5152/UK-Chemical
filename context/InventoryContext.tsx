@@ -51,8 +51,11 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
         const { data: { session } } = await supabase.auth.getSession();
         
         if (session?.user) {
-          await fetchUserData(session.user.id, session.user.email);
-          await fetchAllData();
+          // PERFORMANCE FIX: Fetch User Data and App Data in Parallel
+          await Promise.all([
+            fetchUserData(session.user.id, session.user.email),
+            fetchAllData()
+          ]);
         }
       } catch (err) {
         console.error("Initialization error:", err);
@@ -67,8 +70,11 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_IN' && session?.user) {
         setLoading(true);
-        await fetchUserData(session.user.id, session.user.email);
-        await fetchAllData();
+        // Parallel fetch on login
+        await Promise.all([
+          fetchUserData(session.user.id, session.user.email),
+          fetchAllData()
+        ]);
         setLoading(false);
       } else if (event === 'SIGNED_OUT') {
         setCurrentUser(null);
@@ -76,6 +82,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
         setSuppliers([]);
         setLogs([]);
         setNotifications([]);
+        setUsers([]);
       }
     });
 
@@ -98,22 +105,42 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       const ADMIN_EMAIL = "sagyeimensah@yahoo.com";
       const isAdminUser = userEmail && userEmail.trim().toLowerCase() === ADMIN_EMAIL.toLowerCase();
 
-      let { data, error } = await supabase.from('profiles').select('*').eq('id', userId).single();
-      
-      // Handle "Table Missing" error gracefully
-      if (error && error.message && error.message.includes('Could not find the table')) {
-        console.error("CRITICAL DB ERROR: 'profiles' table is missing. Run the SQL script.");
-        if (isAdminUser) {
-          setCurrentUser({
-            id: userId,
-            name: 'Manager (DB Offline)',
-            email: userEmail!,
-            role: 'MANAGER'
+      // OPTIMIZATION: Admin Bypass
+      // If it's the admin email, strictly force Manager role immediately to avoid UI flicker
+      if (isAdminUser) {
+        // We still try to fetch DB to get name, but we ensure role is MANAGER
+        let { data, error } = await supabase.from('profiles').select('*').eq('id', userId).single();
+        
+        if (!data && error) {
+          // If missing, create it
+          console.log("Admin profile missing, creating...");
+          await supabase.from('profiles').upsert({
+             id: userId, 
+             email: userEmail, 
+             role: 'MANAGER', 
+             full_name: 'Manager'
           });
+          setCurrentUser({ id: userId, name: 'Manager', email: userEmail!, role: 'MANAGER' });
           return;
         }
+
+        // Force update if DB says otherwise
+        if (data && data.role !== 'MANAGER') {
+           supabase.from('profiles').update({ role: 'MANAGER' }).eq('id', userId);
+        }
+        
+        setCurrentUser({
+          id: userId,
+          name: data?.full_name || 'Manager',
+          email: userEmail!,
+          role: 'MANAGER'
+        });
+        return;
       }
 
+      // Normal User Fetch
+      let { data, error } = await supabase.from('profiles').select('*').eq('id', userId).single();
+      
       // FAIL-SAFE: If profile doesn't exist (trigger failed), try to create it manually
       if (error && error.code === 'PGRST116' && userEmail) {
         console.log("Profile missing, attempting fallback creation...");
@@ -122,7 +149,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
           .insert([{ 
             id: userId, 
             email: userEmail, 
-            role: isAdminUser ? 'MANAGER' : 'STAFF', 
+            role: 'STAFF', 
             full_name: 'Staff Member' 
           }])
           .select()
@@ -130,45 +157,22 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
         
         if (newData) {
           data = newData;
-          error = null;
         } else if (insertError) {
-           // Check for table missing error again during insert
+           // If table missing entirely, mock it to prevent app crash
            if (insertError.message?.includes('Could not find the table')) {
-             console.error("Cannot create profile: Table missing.");
-             if (isAdminUser) {
-               setCurrentUser({ id: userId, name: 'Manager', email: userEmail, role: 'MANAGER' });
-               return;
-             }
+             console.error("DB Tables Missing. Using temporary session.");
+             setCurrentUser({ id: userId, name: 'Staff (DB Offline)', email: userEmail, role: 'STAFF' });
+             return;
            }
-           console.error("Fallback creation failed:", insertError.message);
         }
       }
 
       if (data) {
-        // --- ROLE ENFORCEMENT ---
-        if (isAdminUser && data.role !== 'MANAGER') {
-          console.log("Admin Identity Verified. Enforcing MANAGER privileges.");
-          data.role = 'MANAGER'; // Force local object
-          
-          // Update DB asynchronously to fix it permanently
-          supabase.from('profiles').update({ role: 'MANAGER' }).eq('id', userId).then(({ error }) => {
-            if (error) console.error("Failed to sync admin role to DB:", error);
-          });
-        }
-
         setCurrentUser({
           id: data.id,
           name: data.full_name,
           email: data.email,
           role: data.role as UserRole
-        });
-      } else if (userEmail && isAdminUser) {
-        // Last resort fallback
-        setCurrentUser({
-          id: userId,
-          name: 'Manager',
-          email: userEmail,
-          role: 'MANAGER'
         });
       }
     } catch (e) {
@@ -178,10 +182,24 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
 
   const fetchAllData = async () => {
     try {
-      // Fetch Products
-      const { data: prodData, error: prodError } = await supabase.from('products').select('*');
-      if (prodData) {
-        const mappedProducts: Product[] = prodData.map((p: any) => ({
+      // PERFORMANCE FIX: Use Promise.all to fetch everything in parallel
+      const [
+        prodResult,
+        supResult,
+        logResult,
+        userResult,
+        settingsResult
+      ] = await Promise.all([
+        supabase.from('products').select('*'),
+        supabase.from('suppliers').select('*'),
+        supabase.from('logs').select('*').order('created_at', { ascending: false }).limit(50),
+        supabase.from('profiles').select('*'),
+        supabase.from('app_settings').select('*').eq('key', 'expiry_threshold').single()
+      ]);
+
+      // 1. Products
+      if (prodResult.data) {
+        const mappedProducts: Product[] = prodResult.data.map((p: any) => ({
           id: p.id,
           name: p.name,
           category: p.category,
@@ -197,14 +215,11 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
           supplier: p.supplier
         }));
         setProducts(mappedProducts);
-      } else if (prodError) {
-         console.warn("Error fetching products:", prodError.message);
       }
 
-      // Fetch Suppliers
-      const { data: supData } = await supabase.from('suppliers').select('*');
-      if (supData) {
-        const mappedSuppliers: Supplier[] = supData.map((s: any) => ({
+      // 2. Suppliers
+      if (supResult.data) {
+        const mappedSuppliers: Supplier[] = supResult.data.map((s: any) => ({
           id: s.id,
           companyName: s.company_name,
           contactName: s.contact_name,
@@ -214,10 +229,9 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
         setSuppliers(mappedSuppliers);
       }
 
-      // Fetch Logs
-      const { data: logData } = await supabase.from('logs').select('*').order('created_at', { ascending: false }).limit(50);
-      if (logData) {
-        const mappedLogs: LogEntry[] = logData.map((l: any) => ({
+      // 3. Logs
+      if (logResult.data) {
+        const mappedLogs: LogEntry[] = logResult.data.map((l: any) => ({
           id: l.id,
           date: l.created_at,
           action: l.action,
@@ -228,10 +242,9 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
         setLogs(mappedLogs);
       }
 
-      // Fetch Users (for Settings)
-      const { data: userData } = await supabase.from('profiles').select('*');
-      if (userData) {
-        const mappedUsers: User[] = userData.map((u: any) => ({
+      // 4. Users (for settings)
+      if (userResult.data) {
+        const mappedUsers: User[] = userResult.data.map((u: any) => ({
           id: u.id,
           name: u.full_name,
           email: u.email,
@@ -240,10 +253,9 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
         setUsers(mappedUsers);
       }
 
-      // Fetch Settings
-      const { data: settingsData } = await supabase.from('app_settings').select('*').eq('key', 'expiry_threshold').single();
-      if (settingsData) {
-        setExpiryThresholdState(parseInt(settingsData.value));
+      // 5. Settings
+      if (settingsResult.data) {
+        setExpiryThresholdState(parseInt(settingsResult.data.value));
       }
 
     } catch (e) {
@@ -286,18 +298,34 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       performed_by: currentUser.name,
     };
 
-    const { data } = await supabase.from('logs').insert(newLog).select().single();
+    // Optimistic update
+    const tempId = Math.random().toString();
+    const optimisiticLog: LogEntry = {
+      id: tempId,
+      date: new Date().toISOString(),
+      action,
+      productName,
+      details,
+      performedBy: currentUser.name
+    };
+    setLogs(prev => [optimisiticLog, ...prev]);
+
+    const { data, error } = await supabase.from('logs').insert(newLog).select().single();
     
     if (data) {
-       const mappedLog: LogEntry = {
+       // Replace optimistic log with real one
+       setLogs(prev => prev.map(l => l.id === tempId ? {
           id: data.id,
           date: data.created_at,
           action: data.action,
           productName: data.product_name,
           details: data.details,
           performedBy: data.performed_by
-       };
-       setLogs(prev => [mappedLog, ...prev]);
+       } : l));
+    } else if (error) {
+       // Revert on error
+       console.error("Log failed", error);
+       setLogs(prev => prev.filter(l => l.id !== tempId));
     }
   };
 
@@ -345,9 +373,15 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       alert("Only managers can update roles.");
       return;
     }
+    // Optimistic update
+    setUsers(prev => prev.map(u => u.id === userId ? { ...u, role: newRole } : u));
+    
     const { error } = await supabase.from('profiles').update({ role: newRole }).eq('id', userId);
-    if (!error) {
-      setUsers(prev => prev.map(u => u.id === userId ? { ...u, role: newRole } : u));
+    if (error) {
+       console.error("Failed to update role", error);
+       // Revert if needed (fetching data again would also fix it)
+       fetchAllData();
+    } else {
       addLog('UPDATE', 'User Role', `Updated user ${userId} to ${newRole}`);
     }
   };
