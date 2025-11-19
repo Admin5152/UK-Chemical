@@ -91,14 +91,14 @@ export const Inventory = () => {
           <input 
             type="text" 
             placeholder="Search products..." 
-            className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500"
+            className="w-full pl-10 pr-4 py-2 border border-slate-200 bg-white text-slate-900 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500"
             value={filter.search}
             onChange={(e) => setFilter({...filter, search: e.target.value})}
           />
         </div>
         <div className="relative">
           <select 
-            className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 appearance-none bg-white"
+            className="w-full px-4 py-2 border border-slate-200 bg-white text-slate-900 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 appearance-none"
             value={filter.category}
             onChange={(e) => setFilter({...filter, category: e.target.value})}
           >
@@ -109,7 +109,7 @@ export const Inventory = () => {
         </div>
         <div className="relative">
           <select 
-            className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 appearance-none bg-white"
+            className="w-full px-4 py-2 border border-slate-200 bg-white text-slate-900 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 appearance-none"
             value={filter.stockStatus}
             onChange={(e) => setFilter({...filter, stockStatus: e.target.value as any})}
           >
@@ -121,7 +121,7 @@ export const Inventory = () => {
         </div>
          <div className="relative">
           <select 
-            className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 appearance-none bg-white"
+            className="w-full px-4 py-2 border border-slate-200 bg-white text-slate-900 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 appearance-none"
             value={filter.location}
             onChange={(e) => setFilter({...filter, location: e.target.value as any})}
           >
@@ -261,53 +261,53 @@ const ProductFormModal = ({ isOpen, onClose, existingProduct, onSubmit }: any) =
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Product Name</label>
-              <input required type="text" className="w-full p-2 border rounded-md" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
+              <input required type="text" className="w-full p-2 border border-slate-300 bg-white text-slate-900 rounded-md" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Category</label>
-              <select className="w-full p-2 border rounded-md" value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})}>
+              <select className="w-full p-2 border border-slate-300 bg-white text-slate-900 rounded-md" value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})}>
                 {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Supplier</label>
-              <input required type="text" className="w-full p-2 border rounded-md" value={formData.supplier} onChange={e => setFormData({...formData, supplier: e.target.value})} />
+              <input required type="text" className="w-full p-2 border border-slate-300 bg-white text-slate-900 rounded-md" value={formData.supplier} onChange={e => setFormData({...formData, supplier: e.target.value})} />
             </div>
              <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Unit (L, kg, etc)</label>
-              <input required type="text" className="w-full p-2 border rounded-md" value={formData.unit} onChange={e => setFormData({...formData, unit: e.target.value})} />
+              <input required type="text" className="w-full p-2 border border-slate-300 bg-white text-slate-900 rounded-md" value={formData.unit} onChange={e => setFormData({...formData, unit: e.target.value})} />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Initial Qty (Warehouse)</label>
-              <input required type="number" className="w-full p-2 border rounded-md" value={formData.qtyWarehouse} onChange={e => setFormData({...formData, qtyWarehouse: Number(e.target.value)})} />
+              <input required type="number" className="w-full p-2 border border-slate-300 bg-white text-slate-900 rounded-md" value={formData.qtyWarehouse} onChange={e => setFormData({...formData, qtyWarehouse: Number(e.target.value)})} />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Initial Qty (Office)</label>
-              <input required type="number" className="w-full p-2 border rounded-md" value={formData.qtyOffice} onChange={e => setFormData({...formData, qtyOffice: Number(e.target.value)})} />
+              <input required type="number" className="w-full p-2 border border-slate-300 bg-white text-slate-900 rounded-md" value={formData.qtyOffice} onChange={e => setFormData({...formData, qtyOffice: Number(e.target.value)})} />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1 text-orange-600">Reorder Threshold</label>
-              <input required type="number" className="w-full p-2 border border-orange-200 rounded-md focus:ring-orange-500" value={formData.reorderLevel} onChange={e => setFormData({...formData, reorderLevel: Number(e.target.value)})} />
+              <input required type="number" className="w-full p-2 border border-orange-200 bg-white text-slate-900 rounded-md focus:ring-orange-500" value={formData.reorderLevel} onChange={e => setFormData({...formData, reorderLevel: Number(e.target.value)})} />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Price per Unit</label>
-              <input required type="number" step="0.01" className="w-full p-2 border rounded-md" value={formData.price} onChange={e => setFormData({...formData, price: Number(e.target.value)})} />
+              <input required type="number" step="0.01" className="w-full p-2 border border-slate-300 bg-white text-slate-900 rounded-md" value={formData.price} onChange={e => setFormData({...formData, price: Number(e.target.value)})} />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Production Date</label>
-              <input required type="date" className="w-full p-2 border rounded-md" value={formData.productionDate} onChange={e => setFormData({...formData, productionDate: e.target.value})} />
+              <input required type="date" className="w-full p-2 border border-slate-300 bg-white text-slate-900 rounded-md" value={formData.productionDate} onChange={e => setFormData({...formData, productionDate: e.target.value})} />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Expiration Date</label>
-              <input required type="date" className="w-full p-2 border rounded-md" value={formData.expirationDate} onChange={e => setFormData({...formData, expirationDate: e.target.value})} />
+              <input required type="date" className="w-full p-2 border border-slate-300 bg-white text-slate-900 rounded-md" value={formData.expirationDate} onChange={e => setFormData({...formData, expirationDate: e.target.value})} />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Origin Country</label>
-              <input type="text" className="w-full p-2 border rounded-md" value={formData.origin} onChange={e => setFormData({...formData, origin: e.target.value})} />
+              <input type="text" className="w-full p-2 border border-slate-300 bg-white text-slate-900 rounded-md" value={formData.origin} onChange={e => setFormData({...formData, origin: e.target.value})} />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Delivery Agent</label>
-              <input type="text" className="w-full p-2 border rounded-md" value={formData.deliveryAgent} onChange={e => setFormData({...formData, deliveryAgent: e.target.value})} />
+              <input type="text" className="w-full p-2 border border-slate-300 bg-white text-slate-900 rounded-md" value={formData.deliveryAgent} onChange={e => setFormData({...formData, deliveryAgent: e.target.value})} />
             </div>
           </div>
           <div className="flex justify-end gap-3 pt-4 border-t">
@@ -361,7 +361,7 @@ const TransferModal = ({ isOpen, onClose, product, onTransfer }: any) => {
             <label className="block text-sm font-medium text-slate-700 mb-1">Amount to Transfer ({product.unit})</label>
             <input 
               type="number" max={maxAvailable} min={1} required 
-              className="w-full p-2 border rounded-md text-lg font-bold text-center"
+              className="w-full p-2 border border-slate-300 bg-white text-slate-900 rounded-md text-lg font-bold text-center"
               value={amount} onChange={e => setAmount(Number(e.target.value))}
             />
           </div>

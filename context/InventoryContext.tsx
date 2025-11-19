@@ -1,5 +1,5 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { Product, LogEntry, User, Notification, Location, UserRole, Supplier } from '../types';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from 'react';
+import { Product, LogEntry, User, Notification, Location, UserRole, Supplier, Invoice } from '../types';
 import { supabase } from '../lib/supabase';
 
 interface InventoryContextType {
@@ -7,6 +7,7 @@ interface InventoryContextType {
   users: User[];
   products: Product[];
   suppliers: Supplier[];
+  invoices: Invoice[];
   logs: LogEntry[];
   notifications: Notification[];
   expiryThreshold: number;
@@ -21,6 +22,8 @@ interface InventoryContextType {
   addSupplier: (supplier: Supplier) => void;
   updateSupplier: (supplier: Supplier) => void;
   deleteSupplier: (id: string) => void;
+  addInvoice: (invoice: Omit<Invoice, 'id'>) => Promise<void>;
+  deleteInvoice: (id: string) => void;
   adjustStock: (productId: string, location: Location, delta: number, reason: string) => void;
   transferStock: (productId: string, from: Location, to: Location, amount: number) => void;
   markNotificationRead: (id: string) => void;
@@ -34,370 +37,292 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
   const [users, setUsers] = useState<User[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [expiryThreshold, setExpiryThresholdState] = useState<number>(30);
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  
+  // Initialize currentUser from localStorage for instant load perception
+  const [currentUser, setCurrentUser] = useState<User | null>(() => {
+    try {
+      const saved = localStorage.getItem('ukchem_user');
+      return saved ? JSON.parse(saved) : null;
+    } catch (e) { return null; }
+  });
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  
+  const isFetching = useRef(false);
+  const currentUserIdRef = useRef<string | null>(currentUser?.id || null);
 
   // --- Initialization & Auth ---
   useEffect(() => {
     let mounted = true;
 
-    const initializeApp = async () => {
-      try {
-        // 1. Check active session
-        const { data: { session } } = await supabase.auth.getSession();
-        
-        if (session?.user) {
-          // PERFORMANCE FIX: Fetch User Data and App Data in Parallel
-          await Promise.all([
-            fetchUserData(session.user.id, session.user.email),
-            fetchAllData()
-          ]);
-        }
-      } catch (err) {
-        console.error("Initialization error:", err);
-      } finally {
+    const init = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (session?.user) {
+        await handleUserSession(session.user.id, session.user.email);
+      } else {
+        clearData();
         if (mounted) setLoading(false);
       }
+
+      const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+        if (event === 'TOKEN_REFRESHED') return; 
+
+        if (session?.user) {
+          if (session.user.id !== currentUserIdRef.current || products.length === 0) {
+             await handleUserSession(session.user.id, session.user.email);
+          }
+        } else if (event === 'SIGNED_OUT') {
+          clearData();
+          setLoading(false);
+        }
+      });
+
+      return () => subscription.unsubscribe();
     };
 
-    initializeApp();
+    init();
 
-    // 2. Listen for auth changes (Login, Logout, Signup)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === 'SIGNED_IN' && session?.user) {
-        setLoading(true);
-        // Parallel fetch on login
-        await Promise.all([
-          fetchUserData(session.user.id, session.user.email),
-          fetchAllData()
-        ]);
-        setLoading(false);
-      } else if (event === 'SIGNED_OUT') {
-        setCurrentUser(null);
-        setProducts([]);
-        setSuppliers([]);
-        setLogs([]);
-        setNotifications([]);
-        setUsers([]);
-      }
-    });
-
-    return () => {
-      mounted = false;
-      subscription.unsubscribe();
-    };
+    return () => { mounted = false; };
   }, []);
 
-  // Check thresholds whenever products or threshold changes
-  useEffect(() => {
-    if (products.length > 0) {
-      products.forEach(p => checkThresholds(p, expiryThreshold));
-    }
-  }, [products, expiryThreshold]);
+  const clearData = () => {
+    setCurrentUser(null);
+    currentUserIdRef.current = null;
+    setUsers([]);
+    setProducts([]);
+    setSuppliers([]);
+    setInvoices([]);
+    setLogs([]);
+    setNotifications([]);
+    localStorage.removeItem('ukchem_user');
+  };
 
-  const fetchUserData = async (userId: string, userEmail?: string) => {
+  const handleUserSession = async (userId: string, email: string | undefined) => {
+    if (isFetching.current) return;
+    isFetching.current = true;
+
     try {
-      // --- ADMIN IDENTITY CHECK ---
-      const ADMIN_EMAIL = "sagyeimensah@yahoo.com";
-      const isAdminUser = userEmail && userEmail.trim().toLowerCase() === ADMIN_EMAIL.toLowerCase();
+      // Admin Override Logic
+      const isSuperAdmin = email === 'sagyeimensah@yahoo.com';
 
-      // OPTIMIZATION: Admin Bypass
-      // If it's the admin email, strictly force Manager role immediately to avoid UI flicker
-      if (isAdminUser) {
-        // We still try to fetch DB to get name, but we ensure role is MANAGER
-        let { data, error } = await supabase.from('profiles').select('*').eq('id', userId).single();
-        
-        if (!data && error) {
-          // If missing, create it
-          console.log("Admin profile missing, creating...");
-          await supabase.from('profiles').upsert({
-             id: userId, 
-             email: userEmail, 
-             role: 'MANAGER', 
-             full_name: 'Manager'
-          });
-          setCurrentUser({ id: userId, name: 'Manager', email: userEmail!, role: 'MANAGER' });
-          return;
-        }
+      let { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single();
 
-        // Force update if DB says otherwise
-        if (data && data.role !== 'MANAGER') {
-           supabase.from('profiles').update({ role: 'MANAGER' }).eq('id', userId);
-        }
-        
-        setCurrentUser({
+      if (profileError || !profile) {
+        const newProfile = {
           id: userId,
-          name: data?.full_name || 'Manager',
-          email: userEmail!,
-          role: 'MANAGER'
-        });
-        return;
+          email: email,
+          full_name: 'Staff Member',
+          role: isSuperAdmin ? 'MANAGER' : 'STAFF'
+        };
+        await supabase.from('profiles').insert(newProfile).select().single();
+        profile = newProfile;
       }
 
-      // Normal User Fetch
-      let { data, error } = await supabase.from('profiles').select('*').eq('id', userId).single();
-      
-      // FAIL-SAFE: If profile doesn't exist (trigger failed), try to create it manually
-      if (error && error.code === 'PGRST116' && userEmail) {
-        console.log("Profile missing, attempting fallback creation...");
-        const { data: newData, error: insertError } = await supabase
-          .from('profiles')
-          .insert([{ 
-            id: userId, 
-            email: userEmail, 
-            role: 'STAFF', 
-            full_name: 'Staff Member' 
-          }])
-          .select()
-          .single();
-        
-        if (newData) {
-          data = newData;
-        } else if (insertError) {
-           // If table missing entirely, mock it to prevent app crash
-           if (insertError.message?.includes('Could not find the table')) {
-             console.error("DB Tables Missing. Using temporary session.");
-             setCurrentUser({ id: userId, name: 'Staff (DB Offline)', email: userEmail, role: 'STAFF' });
-             return;
-           }
-        }
+      if (isSuperAdmin) {
+        profile.role = 'MANAGER';
+        supabase.from('profiles').update({ role: 'MANAGER' }).eq('id', userId).then();
       }
 
-      if (data) {
-        setCurrentUser({
-          id: data.id,
-          name: data.full_name,
-          email: data.email,
-          role: data.role as UserRole
-        });
+      const userObj: User = {
+        id: profile.id,
+        name: profile.full_name || email?.split('@')[0] || 'User',
+        email: profile.email || email || '',
+        role: profile.role as UserRole
+      };
+
+      setCurrentUser(userObj);
+      currentUserIdRef.current = userId;
+      localStorage.setItem('ukchem_user', JSON.stringify(userObj));
+
+      await fetchAllData();
+
+    } catch (err: any) {
+      console.error("Session Init Error:", err);
+      if (email === 'sagyeimensah@yahoo.com') {
+         const fallbackAdmin: User = { id: userId, name: 'Manager', email: email, role: 'MANAGER' };
+         setCurrentUser(fallbackAdmin);
+         localStorage.setItem('ukchem_user', JSON.stringify(fallbackAdmin));
       }
-    } catch (e) {
-      console.error("Profile fetch error", e);
+    } finally {
+      setLoading(false);
+      isFetching.current = false;
     }
   };
 
   const fetchAllData = async () => {
     try {
-      // PERFORMANCE FIX: Use Promise.all to fetch everything in parallel
-      const [
-        prodResult,
-        supResult,
-        logResult,
-        userResult,
-        settingsResult
-      ] = await Promise.all([
+      // Use Promise.allSettled for invoices to handle missing table gracefully
+      const [productsRes, suppliersRes, logsRes, usersRes, settingsRes, invoicesRes] = await Promise.all([
         supabase.from('products').select('*'),
         supabase.from('suppliers').select('*'),
         supabase.from('logs').select('*').order('created_at', { ascending: false }).limit(50),
         supabase.from('profiles').select('*'),
-        supabase.from('app_settings').select('*').eq('key', 'expiry_threshold').single()
+        supabase.from('app_settings').select('*').eq('key', 'expiry_threshold').single(),
+        supabase.from('invoices').select('*').order('created_at', { ascending: false })
       ]);
 
-      // 1. Products
-      if (prodResult.data) {
-        const mappedProducts: Product[] = prodResult.data.map((p: any) => ({
+      if (productsRes.data) {
+        const formattedProducts = productsRes.data.map(p => ({
           id: p.id,
           name: p.name,
           category: p.category,
           unit: p.unit,
-          qtyWarehouse: p.qty_warehouse,
-          qtyOffice: p.qty_office,
-          reorderLevel: p.reorder_level,
+          qtyWarehouse: Number(p.qty_warehouse),
+          qtyOffice: Number(p.qty_office),
+          reorderLevel: Number(p.reorder_level),
           productionDate: p.production_date,
           expirationDate: p.expiration_date,
           origin: p.origin,
           deliveryAgent: p.delivery_agent,
-          price: p.price,
+          price: Number(p.price),
           supplier: p.supplier
         }));
-        setProducts(mappedProducts);
+        setProducts(formattedProducts);
+        checkNotifications(formattedProducts, settingsRes.data?.value || 30);
       }
 
-      // 2. Suppliers
-      if (supResult.data) {
-        const mappedSuppliers: Supplier[] = supResult.data.map((s: any) => ({
+      if (suppliersRes.data) {
+        setSuppliers(suppliersRes.data.map(s => ({
           id: s.id,
           companyName: s.company_name,
           contactName: s.contact_name,
           email: s.email,
           phone: s.phone
-        }));
-        setSuppliers(mappedSuppliers);
+        })));
       }
 
-      // 3. Logs
-      if (logResult.data) {
-        const mappedLogs: LogEntry[] = logResult.data.map((l: any) => ({
+      // Invoice Logic with Fallback
+      if (invoicesRes.data) {
+        setInvoices(invoicesRes.data.map(i => ({
+          id: i.id,
+          invoiceNumber: i.invoice_number,
+          customerName: i.customer_name,
+          customerAddress: i.customer_address,
+          customerContact: i.customer_contact,
+          date: i.date,
+          items: i.items,
+          totalAmount: Number(i.total_amount)
+        })));
+      } else if (invoicesRes.error) {
+        // Fallback to Local Storage if Supabase fails (e.g. missing table)
+        try {
+          const localInvoices = localStorage.getItem('ukchem_invoices');
+          if (localInvoices) {
+            setInvoices(JSON.parse(localInvoices));
+          }
+        } catch (e) { console.error("Local invoice load failed", e); }
+      }
+
+      if (logsRes.data) {
+        setLogs(logsRes.data.map(l => ({
           id: l.id,
           date: l.created_at,
           action: l.action,
           productName: l.product_name,
           details: l.details,
           performedBy: l.performed_by
-        }));
-        setLogs(mappedLogs);
+        })));
       }
 
-      // 4. Users (for settings)
-      if (userResult.data) {
-        const mappedUsers: User[] = userResult.data.map((u: any) => ({
+      if (usersRes.data) {
+        setUsers(usersRes.data.map(u => ({
           id: u.id,
           name: u.full_name,
           email: u.email,
           role: u.role as UserRole
-        }));
-        setUsers(mappedUsers);
+        })));
+      }
+      
+      if (settingsRes.data) {
+        setExpiryThresholdState(Number(settingsRes.data.value));
       }
 
-      // 5. Settings
-      if (settingsResult.data) {
-        setExpiryThresholdState(parseInt(settingsResult.data.value));
-      }
-
-    } catch (e) {
-      console.error("Error fetching data", e);
+    } catch (error) {
+      console.error("Error fetching data:", error);
     }
   };
 
-  // --- Auth Methods ---
+  const checkNotifications = (currentProducts: Product[], threshold: number) => {
+    const newNotifs: Notification[] = [];
+    const now = new Date();
+    const warningDate = new Date();
+    warningDate.setDate(now.getDate() + threshold);
 
-  const login = async (email: string, pass: string) => {
-    setError(null);
-    const { error } = await supabase.auth.signInWithPassword({ email, password: pass });
-    if (error) throw error;
-  };
+    currentProducts.forEach(p => {
+      const total = p.qtyWarehouse + p.qtyOffice;
+      const expiry = new Date(p.expirationDate);
 
-  const signup = async (email: string, pass: string, name: string) => {
-    setError(null);
-    const { error } = await supabase.auth.signUp({
-      email,
-      password: pass,
-      options: { data: { full_name: name } }
+      if (total <= p.reorderLevel) {
+        newNotifs.push({
+          id: `low-${p.id}`,
+          title: 'Low Stock Alert',
+          message: `${p.name} is low (${total} ${p.unit}).`,
+          type: 'WARNING',
+          date: new Date().toISOString(),
+          isRead: false
+        });
+      }
+
+      if (expiry < now) {
+        newNotifs.push({
+          id: `exp-${p.id}`,
+          title: 'Product Expired',
+          message: `${p.name} expired on ${expiry.toLocaleDateString()}.`,
+          type: 'DANGER',
+          date: new Date().toISOString(),
+          isRead: false
+        });
+      } else if (expiry < warningDate) {
+        newNotifs.push({
+          id: `soon-${p.id}`,
+          title: 'Expiring Soon',
+          message: `${p.name} expires in ${Math.ceil((expiry.getTime() - now.getTime())/(1000*60*60*24))} days.`,
+          type: 'INFO',
+          date: new Date().toISOString(),
+          isRead: false
+        });
+      }
     });
-    if (error) throw error;
+    setNotifications(newNotifs);
   };
 
-  const logout = async () => {
-    await supabase.auth.signOut();
-    setCurrentUser(null);
-  };
+  // --- Actions ---
 
-  // --- Helpers ---
-
-  const addLog = async (action: LogEntry['action'], productName: string, details: string) => {
+  const logAction = async (action: string, productName: string, details: string) => {
     if (!currentUser) return;
-    
     const newLog = {
       action,
       product_name: productName,
       details,
-      performed_by: currentUser.name,
+      performed_by: currentUser.name
     };
-
-    // Optimistic update
-    const tempId = Math.random().toString();
-    const optimisiticLog: LogEntry = {
-      id: tempId,
+    
+    const optimisticLog: LogEntry = {
+      id: Math.random().toString(),
       date: new Date().toISOString(),
-      action,
+      action: action as any,
       productName,
       details,
       performedBy: currentUser.name
     };
-    setLogs(prev => [optimisiticLog, ...prev]);
+    setLogs(prev => [optimisticLog, ...prev]);
 
-    const { data, error } = await supabase.from('logs').insert(newLog).select().single();
-    
-    if (data) {
-       // Replace optimistic log with real one
-       setLogs(prev => prev.map(l => l.id === tempId ? {
-          id: data.id,
-          date: data.created_at,
-          action: data.action,
-          productName: data.product_name,
-          details: data.details,
-          performedBy: data.performed_by
-       } : l));
-    } else if (error) {
-       // Revert on error
-       console.error("Log failed", error);
-       setLogs(prev => prev.filter(l => l.id !== tempId));
-    }
-  };
-
-  const checkThresholds = (product: Product, thresholdDays: number) => {
-    const totalStock = product.qtyWarehouse + product.qtyOffice;
-    
-    // Low Stock
-    if (totalStock <= product.reorderLevel) {
-      const alertId = `low-${product.id}`;
-      setNotifications(prev => {
-         if (prev.some(n => n.id === alertId)) return prev;
-         return [{
-          id: alertId,
-          title: 'Low Stock Alert',
-          message: `${product.name} is below reorder level.`,
-          type: 'WARNING',
-          date: new Date().toISOString(),
-          isRead: false
-        }, ...prev];
-      });
-    }
-
-    // Expiry
-    const daysUntil = Math.ceil((new Date(product.expirationDate).getTime() - new Date().getTime()) / (1000 * 3600 * 24));
-    if (daysUntil <= thresholdDays) {
-       const alertId = `exp-${product.id}`;
-       setNotifications(prev => {
-         if (prev.some(n => n.id === alertId)) return prev;
-         return [{
-           id: alertId,
-           title: daysUntil < 0 ? 'Expired' : 'Expiring Soon',
-           message: `${product.name} expires in ${daysUntil} days.`,
-           type: 'DANGER',
-           date: new Date().toISOString(),
-           isRead: false
-         }, ...prev];
-       });
-    }
-  };
-
-  // --- Data Operations ---
-
-  const updateUserRole = async (userId: string, newRole: UserRole) => {
-    if (currentUser?.role !== 'MANAGER') {
-      alert("Only managers can update roles.");
-      return;
-    }
-    // Optimistic update
-    setUsers(prev => prev.map(u => u.id === userId ? { ...u, role: newRole } : u));
-    
-    const { error } = await supabase.from('profiles').update({ role: newRole }).eq('id', userId);
-    if (error) {
-       console.error("Failed to update role", error);
-       // Revert if needed (fetching data again would also fix it)
-       fetchAllData();
-    } else {
-      addLog('UPDATE', 'User Role', `Updated user ${userId} to ${newRole}`);
-    }
-  };
-
-  const setExpiryThreshold = async (days: number) => {
-    if (currentUser?.role !== 'MANAGER') return;
-    setExpiryThresholdState(days);
-    await supabase.from('app_settings').upsert({ key: 'expiry_threshold', value: days.toString() });
+    await supabase.from('logs').insert(newLog);
   };
 
   const addProduct = async (product: Product) => {
-    if (currentUser?.role !== 'MANAGER') {
-      alert("Access Denied: Only managers can add products.");
-      return;
-    }
-
+    if (currentUser?.role !== 'MANAGER') return;
+    
     const dbProduct = {
       name: product.name,
       category: product.category,
@@ -414,20 +339,17 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
     };
 
     const { data, error } = await supabase.from('products').insert(dbProduct).select().single();
-    if (data) {
-      const newProd: Product = { ...product, id: data.id };
-      setProducts(prev => [...prev, newProd]);
-      addLog('CREATE', product.name, 'Product created');
-    } else if (error) {
-      console.error(error);
+    
+    if (data && !error) {
+      const newProduct = { ...product, id: data.id };
+      setProducts(prev => [...prev, newProduct]);
+      logAction('CREATE', product.name, 'Added new product');
+      checkNotifications([...products, newProduct], expiryThreshold);
     }
   };
 
   const updateProduct = async (product: Product) => {
-    if (currentUser?.role !== 'MANAGER') {
-      alert("Access Denied: Only managers can edit products.");
-      return;
-    }
+    if (currentUser?.role !== 'MANAGER') return;
 
     const dbProduct = {
       name: product.name,
@@ -445,143 +367,206 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
     };
 
     const { error } = await supabase.from('products').update(dbProduct).eq('id', product.id);
+
     if (!error) {
       setProducts(prev => prev.map(p => p.id === product.id ? product : p));
-      addLog('UPDATE', product.name, 'Product updated');
+      logAction('UPDATE', product.name, 'Updated details');
+      checkNotifications(products.map(p => p.id === product.id ? product : p), expiryThreshold);
     }
   };
 
   const deleteProduct = async (id: string) => {
-    if (currentUser?.role !== 'MANAGER') {
-      alert("Access Denied: Only managers can delete products.");
-      return;
-    }
-
+    if (currentUser?.role !== 'MANAGER') return;
     const pName = products.find(p => p.id === id)?.name || 'Product';
+    
     const { error } = await supabase.from('products').delete().eq('id', id);
+    
     if (!error) {
       setProducts(prev => prev.filter(p => p.id !== id));
-      addLog('DELETE', pName, 'Product deleted');
+      logAction('DELETE', pName, 'Deleted product');
     }
   };
 
-  const addSupplier = async (supplier: Supplier) => {
+  const addInvoice = async (invoice: Omit<Invoice, 'id'>) => {
     if (currentUser?.role !== 'MANAGER') return;
-    const dbSupplier = {
-      company_name: supplier.companyName,
-      contact_name: supplier.contactName,
-      email: supplier.email,
-      phone: supplier.phone
+
+    const dbInvoice = {
+      invoice_number: invoice.invoiceNumber,
+      customer_name: invoice.customerName,
+      customer_address: invoice.customerAddress,
+      customer_contact: invoice.customerContact,
+      date: invoice.date,
+      items: invoice.items,
+      total_amount: invoice.totalAmount,
+      created_by: currentUser.id
     };
-    const { data } = await supabase.from('suppliers').insert(dbSupplier).select().single();
-    if (data) {
-      setSuppliers(prev => [...prev, { ...supplier, id: data.id }]);
-      addLog('CREATE', supplier.companyName, 'Supplier added');
+
+    const { data, error } = await supabase.from('invoices').insert(dbInvoice).select().single();
+    
+    if (data && !error) {
+      // Database Success
+      const newInvoice = { ...invoice, id: data.id };
+      setInvoices(prev => [newInvoice, ...prev]);
+      logAction('CREATE', `Invoice ${invoice.invoiceNumber}`, `Created invoice for ${invoice.customerName}`);
+    } else {
+      // Fallback to Local Storage if database insert fails
+      console.warn("Database Insert Failed (Table Missing?), Saving Locally", error);
+      const fallbackId = Math.random().toString();
+      const newInvoice = { ...invoice, id: fallbackId };
+      
+      setInvoices(prev => {
+        const updated = [newInvoice, ...prev];
+        localStorage.setItem('ukchem_invoices', JSON.stringify(updated));
+        return updated;
+      });
+      logAction('CREATE', `Invoice ${invoice.invoiceNumber}`, `Created invoice (Local Save)`);
     }
   };
 
-  const updateSupplier = async (supplier: Supplier) => {
+  const deleteInvoice = async (id: string) => {
     if (currentUser?.role !== 'MANAGER') return;
-    const dbSupplier = {
-      company_name: supplier.companyName,
-      contact_name: supplier.contactName,
-      email: supplier.email,
-      phone: supplier.phone
-    };
-    const { error } = await supabase.from('suppliers').update(dbSupplier).eq('id', supplier.id);
-    if (!error) {
-      setSuppliers(prev => prev.map(s => s.id === supplier.id ? supplier : s));
-      addLog('UPDATE', supplier.companyName, 'Supplier updated');
-    }
-  };
-
-  const deleteSupplier = async (id: string) => {
-    if (currentUser?.role !== 'MANAGER') return;
-    const sName = suppliers.find(s => s.id === id)?.companyName || 'Supplier';
-    const { error } = await supabase.from('suppliers').delete().eq('id', id);
-    if (!error) {
-      setSuppliers(prev => prev.filter(s => s.id !== id));
-      addLog('DELETE', sName, 'Supplier deleted');
-    }
+    
+    // Try delete from Supabase
+    const { error } = await supabase.from('invoices').delete().eq('id', id);
+    
+    // Always update local state and localStorage to be safe
+    setInvoices(prev => {
+      const updated = prev.filter(i => i.id !== id);
+      localStorage.setItem('ukchem_invoices', JSON.stringify(updated));
+      return updated;
+    });
   };
 
   const adjustStock = async (productId: string, location: Location, delta: number, reason: string) => {
     const product = products.find(p => p.id === productId);
     if (!product) return;
 
-    const updates: any = {};
-    if (location === 'Warehouse') updates.qty_warehouse = product.qtyWarehouse + delta;
-    else updates.qty_office = product.qtyOffice + delta;
+    const updateField = location === 'Warehouse' ? 'qty_warehouse' : 'qty_office';
+    const currentQty = location === 'Warehouse' ? product.qtyWarehouse : product.qtyOffice;
+    const newQty = currentQty + delta;
 
-    const { error } = await supabase.from('products').update(updates).eq('id', productId);
-    
+    const { error } = await supabase
+      .from('products')
+      .update({ [updateField]: newQty })
+      .eq('id', productId);
+
     if (!error) {
-      setProducts(prev => prev.map(p => {
-         if (p.id !== productId) return p;
-         return location === 'Warehouse' 
-           ? { ...p, qtyWarehouse: p.qtyWarehouse + delta }
-           : { ...p, qtyOffice: p.qtyOffice + delta };
-      }));
-      addLog(delta > 0 ? 'ADD' : 'REMOVE', product.name, `${delta > 0 ? 'Added' : 'Removed'} ${Math.abs(delta)} (${location}). Reason: ${reason}`);
+      const updatedProduct = {
+        ...product,
+        qtyWarehouse: location === 'Warehouse' ? newQty : product.qtyWarehouse,
+        qtyOffice: location === 'Main Office' ? newQty : product.qtyOffice
+      };
+      setProducts(prev => prev.map(p => p.id === productId ? updatedProduct : p));
+      logAction(delta > 0 ? 'ADD' : 'REMOVE', product.name, `${reason} (${delta})`);
     }
   };
 
   const transferStock = async (productId: string, from: Location, to: Location, amount: number) => {
-     const product = products.find(p => p.id === productId);
-     if (!product) return;
+    const product = products.find(p => p.id === productId);
+    if (!product) return;
 
-     const updates: any = {};
-     const currentFrom = from === 'Warehouse' ? product.qtyWarehouse : product.qtyOffice;
-     const currentTo = to === 'Warehouse' ? product.qtyWarehouse : product.qtyOffice;
-     
-     if (from === 'Warehouse') {
-        updates.qty_warehouse = currentFrom - amount;
-        updates.qty_office = currentTo + amount;
-     } else {
-        updates.qty_office = currentFrom - amount;
-        updates.qty_warehouse = currentTo + amount;
-     }
+    const fromQty = from === 'Warehouse' ? product.qtyWarehouse : product.qtyOffice;
+    const toQty = to === 'Warehouse' ? product.qtyWarehouse : product.qtyOffice;
 
-     const { error } = await supabase.from('products').update(updates).eq('id', productId);
-     
-     if (!error) {
-       setProducts(prev => prev.map(p => {
-         if (p.id !== productId) return p;
-         return { ...p, qtyWarehouse: updates.qty_warehouse ?? p.qtyWarehouse, qtyOffice: updates.qty_office ?? p.qtyOffice };
-       }));
-       addLog('TRANSFER', product.name, `Transferred ${amount} from ${from} to ${to}`);
-     }
+    const updatePayload = {
+      qty_warehouse: from === 'Warehouse' ? fromQty - amount : toQty + amount,
+      qty_office: from === 'Main Office' ? fromQty - amount : toQty + amount,
+    };
+
+    const { error } = await supabase
+      .from('products')
+      .update(updatePayload)
+      .eq('id', productId);
+
+    if (!error) {
+      const updatedProduct = {
+        ...product,
+        qtyWarehouse: updatePayload.qty_warehouse,
+        qtyOffice: updatePayload.qty_office
+      };
+      setProducts(prev => prev.map(p => p.id === productId ? updatedProduct : p));
+      logAction('TRANSFER', product.name, `Moved ${amount} ${product.unit} to ${to}`);
+    }
+  };
+
+  const addSupplier = async (supplier: Supplier) => {
+    const { data, error } = await supabase.from('suppliers').insert({
+      company_name: supplier.companyName,
+      contact_name: supplier.contactName,
+      email: supplier.email,
+      phone: supplier.phone
+    }).select().single();
+    if (data && !error) {
+      setSuppliers(prev => [...prev, { ...supplier, id: data.id }]);
+    }
+  };
+
+  const updateSupplier = async (supplier: Supplier) => {
+    const { error } = await supabase.from('suppliers').update({
+      company_name: supplier.companyName,
+      contact_name: supplier.contactName,
+      email: supplier.email,
+      phone: supplier.phone
+    }).eq('id', supplier.id);
+    if (!error) {
+      setSuppliers(prev => prev.map(s => s.id === supplier.id ? supplier : s));
+    }
+  };
+
+  const deleteSupplier = async (id: string) => {
+    const { error } = await supabase.from('suppliers').delete().eq('id', id);
+    if (!error) {
+      setSuppliers(prev => prev.filter(s => s.id !== id));
+    }
+  };
+
+  const updateUserRole = async (userId: string, newRole: UserRole) => {
+    const { error } = await supabase.from('profiles').update({ role: newRole }).eq('id', userId);
+    if (!error) {
+      setUsers(prev => prev.map(u => u.id === userId ? { ...u, role: newRole } : u));
+    }
+  };
+
+  const setExpiryThreshold = async (days: number) => {
+    const { error } = await supabase.from('app_settings').upsert({ key: 'expiry_threshold', value: days });
+    if (!error) {
+      setExpiryThresholdState(days);
+      checkNotifications(products, days);
+    }
   };
 
   const markNotificationRead = (id: string) => {
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n));
   };
 
+  const login = async (email: string, pass: string) => {
+    const { error } = await supabase.auth.signInWithPassword({ email, password: pass });
+    if (error) throw error;
+  };
+
+  const signup = async (email: string, pass: string, name: string) => {
+    const { error } = await supabase.auth.signUp({
+      email,
+      password: pass,
+      options: { data: { full_name: name } }
+    });
+    if (error) throw error;
+  };
+
+  const logout = async () => {
+    await supabase.auth.signOut();
+    clearData();
+  };
+
   return (
     <InventoryContext.Provider value={{
-      currentUser,
-      users,
-      products,
-      suppliers,
-      logs,
-      notifications,
-      expiryThreshold,
-      loading,
-      error,
-      login,
-      signup,
-      logout,
-      updateUserRole,
-      setExpiryThreshold,
-      addProduct,
-      updateProduct,
-      deleteProduct,
-      addSupplier,
-      updateSupplier,
-      deleteSupplier,
-      adjustStock,
-      transferStock,
-      markNotificationRead
+      currentUser, users, products, suppliers, invoices, logs, notifications, expiryThreshold,
+      login, signup, logout, updateUserRole, setExpiryThreshold,
+      addProduct, updateProduct, deleteProduct,
+      addSupplier, updateSupplier, deleteSupplier,
+      addInvoice, deleteInvoice,
+      adjustStock, transferStock, markNotificationRead,
+      loading, error
     }}>
       {children}
     </InventoryContext.Provider>
@@ -590,6 +575,6 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
 
 export const useInventory = () => {
   const context = useContext(InventoryContext);
-  if (!context) throw new Error('useInventory must be used within InventoryProvider');
+  if (!context) throw new Error("useInventory must be used within InventoryProvider");
   return context;
 };

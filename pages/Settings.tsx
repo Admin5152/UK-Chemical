@@ -49,7 +49,7 @@ export const Settings = () => {
                       value={user.role}
                       onChange={(e) => handleRoleChange(user.id, e.target.value)}
                       disabled={user.id === currentUser?.id}
-                      className={`text-sm font-medium bg-white border border-slate-200 rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-brand-500 ${
+                      className={`text-sm font-medium bg-white text-slate-900 border border-slate-200 rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-brand-500 ${
                         user.id === currentUser?.id ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:border-brand-300'
                       }`}
                     >
@@ -88,7 +88,7 @@ export const Settings = () => {
                     onChange={(e) => setExpiryThreshold(Number(e.target.value))}
                     className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-brand-600"
                  />
-                 <div className="w-24 border border-slate-300 rounded-md px-3 py-2 flex items-center justify-center font-bold text-slate-700 bg-slate-50">
+                 <div className="w-24 border border-slate-300 rounded-md px-3 py-2 flex items-center justify-center font-bold text-slate-700 bg-white">
                     {expiryThreshold}d
                  </div>
                </div>

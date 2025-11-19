@@ -51,6 +51,25 @@ export interface Notification {
   isRead: boolean;
 }
 
+export interface InvoiceItem {
+  id: string;
+  description: string;
+  quantity: number;
+  rate: number;
+  amount: number;
+}
+
+export interface Invoice {
+  id: string;
+  invoiceNumber: string;
+  customerName: string;
+  customerAddress: string;
+  customerContact: string;
+  date: string;
+  items: InvoiceItem[];
+  totalAmount: number;
+}
+
 export interface FilterState {
   search: string;
   category: string;

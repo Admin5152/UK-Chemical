@@ -59,7 +59,7 @@ export const Suppliers = () => {
           <input 
             type="text" 
             placeholder="Search suppliers by company, name or email..." 
-            className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500"
+            className="w-full pl-10 pr-4 py-2 border border-slate-200 bg-white text-slate-900 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -167,7 +167,7 @@ const SupplierModal = ({ isOpen, onClose, existingSupplier, onSubmit }: any) => 
             <label className="block text-sm font-medium text-slate-700 mb-1">Company Name</label>
             <div className="relative">
               <Building className="absolute left-3 top-2.5 text-slate-400" size={16} />
-              <input required type="text" className="w-full pl-9 p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none" 
+              <input required type="text" className="w-full pl-9 p-2 border border-slate-300 bg-white text-slate-900 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none" 
                 value={formData.companyName} onChange={e => setFormData({...formData, companyName: e.target.value})} placeholder="e.g. BASF Chemical" />
             </div>
           </div>
@@ -175,7 +175,7 @@ const SupplierModal = ({ isOpen, onClose, existingSupplier, onSubmit }: any) => 
             <label className="block text-sm font-medium text-slate-700 mb-1">Contact Person Name</label>
             <div className="relative">
               <User className="absolute left-3 top-2.5 text-slate-400" size={16} />
-              <input required type="text" className="w-full pl-9 p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none" 
+              <input required type="text" className="w-full pl-9 p-2 border border-slate-300 bg-white text-slate-900 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none" 
                 value={formData.contactName} onChange={e => setFormData({...formData, contactName: e.target.value})} placeholder="e.g. John Doe" />
             </div>
           </div>
@@ -183,7 +183,7 @@ const SupplierModal = ({ isOpen, onClose, existingSupplier, onSubmit }: any) => 
             <label className="block text-sm font-medium text-slate-700 mb-1">Email Address</label>
             <div className="relative">
                <Mail className="absolute left-3 top-2.5 text-slate-400" size={16} />
-               <input required type="email" className="w-full pl-9 p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none" 
+               <input required type="email" className="w-full pl-9 p-2 border border-slate-300 bg-white text-slate-900 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none" 
                 value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} placeholder="john@company.com" />
             </div>
           </div>
@@ -191,7 +191,7 @@ const SupplierModal = ({ isOpen, onClose, existingSupplier, onSubmit }: any) => 
             <label className="block text-sm font-medium text-slate-700 mb-1">Phone Number</label>
             <div className="relative">
                <Phone className="absolute left-3 top-2.5 text-slate-400" size={16} />
-               <input required type="tel" className="w-full pl-9 p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none" 
+               <input required type="tel" className="w-full pl-9 p-2 border border-slate-300 bg-white text-slate-900 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none" 
                 value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} placeholder="+1 234 567 890" />
             </div>
           </div>

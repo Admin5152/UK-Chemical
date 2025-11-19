@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useInventory } from '../context/InventoryContext';
-import { Lock, UserPlus, LogIn, CheckCircle } from 'lucide-react';
+import { Lock, UserPlus, LogIn, CheckCircle, Eye, EyeOff } from 'lucide-react';
 
 export const Login = () => {
   const { login, signup } = useInventory();
@@ -8,6 +8,7 @@ export const Login = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   
   // Form State
   const [email, setEmail] = useState('');
@@ -71,7 +72,7 @@ export const Login = () => {
               <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Full Name</label>
               <input 
                 type="text" required 
-                className="w-full p-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none"
+                className="w-full p-3 border border-slate-200 bg-white text-slate-900 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none"
                 placeholder="John Doe"
                 value={name} onChange={e => setName(e.target.value)}
               />
@@ -81,19 +82,29 @@ export const Login = () => {
             <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Email Address</label>
             <input 
               type="email" required 
-              className="w-full p-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none"
+              className="w-full p-3 border border-slate-200 bg-white text-slate-900 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none"
               placeholder="email@ukchem.com"
               value={email} onChange={e => setEmail(e.target.value)}
             />
           </div>
           <div>
             <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Password</label>
-            <input 
-              type="password" required minLength={6}
-              className="w-full p-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none"
-              placeholder="••••••••"
-              value={password} onChange={e => setPassword(e.target.value)}
-            />
+            <div className="relative">
+              <input 
+                type={showPassword ? "text" : "password"} 
+                required minLength={6}
+                className="w-full p-3 border border-slate-200 bg-white text-slate-900 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none pr-10"
+                placeholder="••••••••"
+                value={password} onChange={e => setPassword(e.target.value)}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-3.5 text-slate-400 hover:text-slate-600"
+              >
+                {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+              </button>
+            </div>
           </div>
 
           <button 
