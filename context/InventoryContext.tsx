@@ -124,12 +124,16 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
           full_name: 'Staff Member',
           role: isSuperAdmin ? 'MANAGER' : 'STAFF'
         };
-        await supabase.from('profiles').insert(newProfile).select().single();
+        // Try to create profile, if fails (table missing), we handle graceful auth below
+        try {
+           await supabase.from('profiles').insert(newProfile).select().single();
+        } catch(e) { console.warn("Profile creation failed", e); }
         profile = newProfile;
       }
 
       if (isSuperAdmin) {
         profile.role = 'MANAGER';
+        // Try to sync role to DB in background
         supabase.from('profiles').update({ role: 'MANAGER' }).eq('id', userId).then();
       }
 
@@ -148,6 +152,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
 
     } catch (err: any) {
       console.error("Session Init Error:", err);
+      // Fallback for Super Admin even if DB fails completely
       if (email === 'sagyeimensah@yahoo.com') {
          const fallbackAdmin: User = { id: userId, name: 'Manager', email: email, role: 'MANAGER' };
          setCurrentUser(fallbackAdmin);
@@ -161,7 +166,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
 
   const fetchAllData = async () => {
     try {
-      // Use Promise.allSettled for invoices to handle missing table gracefully
+      // Use Promise.allSettled-like behavior by catching individual errors
       const [productsRes, suppliersRes, logsRes, usersRes, settingsRes, invoicesRes] = await Promise.all([
         supabase.from('products').select('*'),
         supabase.from('suppliers').select('*'),
@@ -201,7 +206,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
         })));
       }
 
-      // Invoice Logic with Fallback
+      // Invoice Logic with Strong Fallback
       if (invoicesRes.data) {
         setInvoices(invoicesRes.data.map(i => ({
           id: i.id,
@@ -210,11 +215,12 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
           customerAddress: i.customer_address,
           customerContact: i.customer_contact,
           date: i.date,
-          items: i.items,
+          items: Array.isArray(i.items) ? i.items : [], // Safety check
           totalAmount: Number(i.total_amount)
         })));
       } else if (invoicesRes.error) {
         // Fallback to Local Storage if Supabase fails (e.g. missing table)
+        console.warn("Invoices Table Missing/Error, using LocalStorage");
         try {
           const localInvoices = localStorage.getItem('ukchem_invoices');
           if (localInvoices) {
@@ -401,6 +407,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       created_by: currentUser.id
     };
 
+    // Try to insert into Supabase
     const { data, error } = await supabase.from('invoices').insert(dbInvoice).select().single();
     
     if (data && !error) {
@@ -409,8 +416,8 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       setInvoices(prev => [newInvoice, ...prev]);
       logAction('CREATE', `Invoice ${invoice.invoiceNumber}`, `Created invoice for ${invoice.customerName}`);
     } else {
-      // Fallback to Local Storage if database insert fails
-      console.warn("Database Insert Failed (Table Missing?), Saving Locally", error);
+      // Fallback to Local Storage if database insert fails (e.g. table missing)
+      console.warn("Database Insert Failed, Saving Locally", error);
       const fallbackId = Math.random().toString();
       const newInvoice = { ...invoice, id: fallbackId };
       
@@ -427,7 +434,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
     if (currentUser?.role !== 'MANAGER') return;
     
     // Try delete from Supabase
-    const { error } = await supabase.from('invoices').delete().eq('id', id);
+    await supabase.from('invoices').delete().eq('id', id);
     
     // Always update local state and localStorage to be safe
     setInvoices(prev => {

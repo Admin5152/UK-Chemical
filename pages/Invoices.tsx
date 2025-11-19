@@ -6,6 +6,39 @@ import { Plus, FileText, Printer, Trash2, Eye, ArrowLeft, Save, FlaskConical, Do
 // Declare html2pdf for TypeScript
 declare var html2pdf: any;
 
+// Helper to convert number to words (simplified English version)
+const numberToWords = (num: number): string => {
+  const a = ['','One ','Two ','Three ','Four ','Five ','Six ','Seven ','Eight ','Nine ','Ten ','Eleven ','Twelve ','Thirteen ','Fourteen ','Fifteen ','Sixteen ','Seventeen ','Eighteen ','Nineteen '];
+  const b = ['', '', 'Twenty','Thirty','Forty','Fifty','Sixty','Seventy','Eighty','Ninety'];
+
+  const numStr = num.toFixed(2);
+  const [integerPart, decimalPart] = numStr.split('.');
+  
+  let n = parseInt(integerPart);
+  if (n === 0) return 'Zero';
+  
+  const convertGroup = (n: number): string => {
+    if (n === 0) return '';
+    if (n < 20) return a[n];
+    if (n < 100) return b[Math.floor(n / 10)] + ' ' + a[n % 10];
+    if (n < 1000) return a[Math.floor(n / 100)] + 'Hundred ' + convertGroup(n % 100);
+    return '';
+  };
+
+  let output = '';
+  if (n >= 1000000) {
+    output += convertGroup(Math.floor(n / 1000000)) + 'Million ';
+    n %= 1000000;
+  }
+  if (n >= 1000) {
+    output += convertGroup(Math.floor(n / 1000)) + 'Thousand ';
+    n %= 1000;
+  }
+  output += convertGroup(n);
+  
+  return output.trim() + ' Cedis Only';
+};
+
 export const Invoices = () => {
   const { invoices, products, currentUser, addInvoice, deleteInvoice } = useInventory();
   const [viewState, setViewState] = useState<'LIST' | 'CREATE' | 'PREVIEW'>('LIST');
@@ -105,7 +138,7 @@ export const Invoices = () => {
     
     const element = document.getElementById('invoice-content');
     const opt = {
-      margin:       [0, 0, 0, 0], // No margin, we handle padding in CSS
+      margin:       [5, 5, 5, 5], 
       filename:     `${selectedInvoice.invoiceNumber}.pdf`,
       image:        { type: 'jpeg', quality: 0.98 },
       html2canvas:  { scale: 2, useCORS: true },
@@ -356,7 +389,7 @@ export const Invoices = () => {
             </div>
 
             {/* Totals Section */}
-            <div className="flex justify-end mb-16">
+            <div className="flex flex-col items-end mb-16">
               <div className="w-2/5 space-y-3">
                  <div className="flex justify-between text-slate-600">
                    <span>Subtotal</span>
@@ -370,6 +403,14 @@ export const Invoices = () => {
                    <span className="font-bold text-xl text-brand-700">Grand Total</span>
                    <span className="font-bold text-xl text-slate-900">{selectedInvoice.totalAmount.toLocaleString('en-GH', { style: 'currency', currency: 'GHS' })}</span>
                  </div>
+              </div>
+              
+              {/* Amount in words */}
+              <div className="w-full mt-4 border-t border-slate-200 pt-2 text-right">
+                 <p className="text-xs font-bold text-slate-500 uppercase">Amount in Words</p>
+                 <p className="text-sm font-medium text-slate-800 italic">
+                   {numberToWords(selectedInvoice.totalAmount)}
+                 </p>
               </div>
             </div>
 
