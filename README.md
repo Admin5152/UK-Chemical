@@ -1,20 +1,47 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# UK Chemicals Inventory System
 
-# Run and deploy your AI Studio app
+A professional, web-based inventory management system designed for UK Chemicals to track stock across multiple locations (Warehouse & Main Office).
 
-This contains everything you need to run your app locally.
+## 🚀 Features
 
-View your app in AI Studio: https://ai.studio/apps/drive/1SADRN7yVeE51o8JP89Qh5xSvbrMPPVMR
+- **Multi-Location Tracking:** Monitor stock levels in Warehouse vs. Main Office.
+- **Role-Based Access:** 
+  - **Managers:** Full control (Add/Edit/Delete products, Users, Settings).
+  - **Staff:** View inventory, transfer stock, view reports.
+- **Real-time Invoicing:** Generate professional PDF invoices with automatic number-to-words conversion.
+- **Supplier Management:** Track vendor details and contacts.
+- **Smart Alerts:** Automated notifications for Low Stock and Expiring Products.
+- **Reporting:** Visual charts for stock distribution and expiry analysis.
+- **Printable Views:** Optimized CSS for printing invoices and reports.
 
-## Run Locally
+## 🛠️ Tech Stack
 
-**Prerequisites:**  Node.js
+- **Frontend:** React, TypeScript, Tailwind CSS
+- **Backend:** Supabase (PostgreSQL, Auth, Real-time)
+- **Icons:** Lucide React
+- **Charts:** Recharts
+- **PDF Generation:** html2pdf.js
 
+## 📦 Installation
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/your-username/ukchem-inventory.git
+   ```
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
+3. Start the development server:
+   ```bash
+   npm start
+   ```
+
+## 🔐 Credentials
+
+This project uses Supabase for authentication. 
+- **Manager Login:** (Configured in backend)
+- **Staff Login:** Create a new account via the Signup page.
+
+---
+© 2025 UK Chemicals Ltd.
