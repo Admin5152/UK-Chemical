@@ -1,12 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useInventory } from '../context/InventoryContext';
 import { Invoice, InvoiceItem, Product } from '../types';
-import { Plus, FileText, Printer, Trash2, Eye, ArrowLeft, Save, FlaskConical, Download, Search } from 'lucide-react';
+import { Plus, FileText, Printer, Trash2, Eye, ArrowLeft, Save, Download, Edit } from 'lucide-react';
 
 // Declare html2pdf for TypeScript
 declare var html2pdf: any;
 
-// Helper to convert number to words (simplified English version)
+// Helper to convert number to words
 const numberToWords = (num: number): string => {
   const a = ['','One ','Two ','Three ','Four ','Five ','Six ','Seven ','Eight ','Nine ','Ten ','Eleven ','Twelve ','Thirteen ','Fourteen ','Fifteen ','Sixteen ','Seventeen ','Eighteen ','Nineteen '];
   const b = ['', '', 'Twenty','Thirty','Forty','Fifty','Sixty','Seventy','Eighty','Ninety'];
@@ -40,9 +40,10 @@ const numberToWords = (num: number): string => {
 };
 
 export const Invoices = () => {
-  const { invoices, products, currentUser, addInvoice, deleteInvoice } = useInventory();
+  const { invoices, products, currentUser, addInvoice, updateInvoice, deleteInvoice, companyInfo } = useInventory();
   const [viewState, setViewState] = useState<'LIST' | 'CREATE' | 'PREVIEW'>('LIST');
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
 
   // Create Form State
   const [formCustomer, setFormCustomer] = useState('');
@@ -57,7 +58,6 @@ export const Invoices = () => {
   const [activeSearchRow, setActiveSearchRow] = useState<string | null>(null);
   const searchWrapperRef = useRef<HTMLDivElement>(null);
 
-  // Close suggestions when clicking outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (searchWrapperRef.current && !searchWrapperRef.current.contains(event.target as Node)) {
@@ -67,8 +67,6 @@ export const Invoices = () => {
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
-
-  // --- Handlers ---
 
   const handleAddItem = () => {
     setFormItems([...formItems, { id: Math.random().toString(), description: '', quantity: 1, rate: 0, amount: 0 }]);
@@ -97,7 +95,7 @@ export const Invoices = () => {
         return {
           ...item,
           description: product.name,
-          rate: product.price, // Auto-fill price
+          rate: product.price,
           amount: product.price * item.quantity
         };
       }
@@ -108,24 +106,41 @@ export const Invoices = () => {
 
   const handleSave = async () => {
     const total = formItems.reduce((sum, item) => sum + item.amount, 0);
-    const invoiceNumber = `INV-${new Date().getFullYear()}${Math.floor(1000 + Math.random() * 9000)}`;
     
-    await addInvoice({
-      invoiceNumber,
-      customerName: formCustomer,
-      customerAddress: formAddress,
-      customerContact: formContact,
-      date: formDate,
-      items: formItems,
-      totalAmount: total
-    });
+    if (isEditing && selectedInvoice) {
+      await updateInvoice({
+        ...selectedInvoice,
+        customerName: formCustomer,
+        customerAddress: formAddress,
+        customerContact: formContact,
+        date: formDate,
+        items: formItems,
+        totalAmount: total
+      });
+    } else {
+      const invoiceNumber = `INV-${new Date().getFullYear()}${Math.floor(1000 + Math.random() * 9000)}`;
+      await addInvoice({
+        invoiceNumber,
+        customerName: formCustomer,
+        customerAddress: formAddress,
+        customerContact: formContact,
+        date: formDate,
+        items: formItems,
+        totalAmount: total
+      });
+    }
 
     setViewState('LIST');
-    // Reset form
+    resetForm();
+  };
+
+  const resetForm = () => {
     setFormCustomer('');
     setFormAddress('');
     setFormContact('');
     setFormItems([{ id: '1', description: '', quantity: 1, rate: 0, amount: 0 }]);
+    setIsEditing(false);
+    setSelectedInvoice(null);
   };
 
   const handleView = (inv: Invoice) => {
@@ -133,40 +148,68 @@ export const Invoices = () => {
     setViewState('PREVIEW');
   };
 
+  const handleEdit = (inv: Invoice) => {
+    setFormCustomer(inv.customerName);
+    setFormAddress(inv.customerAddress);
+    setFormContact(inv.customerContact);
+    setFormDate(inv.date);
+    setFormItems(inv.items);
+    setSelectedInvoice(inv);
+    setIsEditing(true);
+    setViewState('CREATE');
+  };
+
+  const handleDelete = (id: string) => {
+    if (window.confirm("Are you sure you want to delete this invoice? This cannot be undone.")) {
+      deleteInvoice(id);
+    }
+  };
+
   const handleDownloadPDF = () => {
     if (!selectedInvoice) return;
     
+    // Scroll to top to ensure capture works
+    window.scrollTo(0, 0);
+
     const element = document.getElementById('invoice-content');
+    const isMobile = window.innerWidth < 768;
+
     const opt = {
       margin:       [5, 5, 5, 5], 
       filename:     `${selectedInvoice.invoiceNumber}.pdf`,
       image:        { type: 'jpeg', quality: 0.98 },
-      html2canvas:  { scale: 2, useCORS: true },
+      html2canvas:  { 
+        scale: isMobile ? 1 : 2, // Use lower scale for mobile to prevent crashes
+        useCORS: true, 
+        scrollY: 0,
+        windowWidth: 794 // A4 width in pixels (approx) to force desktop rendering
+      },
       jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
     };
 
-    html2pdf().set(opt).from(element).save();
+    // Use html2pdf chain
+    html2pdf().set(opt).from(element).save().catch((err: any) => {
+      console.error("PDF Download failed", err);
+      alert("Download failed. Please check your browser settings or try on a desktop.");
+    });
   };
 
   const handlePrint = () => {
     window.print();
   };
 
-  // --- Renderers ---
-
   if (viewState === 'CREATE') {
     const total = formItems.reduce((sum, item) => sum + item.amount, 0);
     return (
       <div className="max-w-5xl mx-auto space-y-6 pb-12">
         <div className="flex items-center justify-between">
-          <button onClick={() => setViewState('LIST')} className="flex items-center text-slate-500 hover:text-slate-800">
+          <button onClick={() => { setViewState('LIST'); resetForm(); }} className="flex items-center text-slate-500 hover:text-slate-800">
             <ArrowLeft size={20} className="mr-2" /> Back to List
           </button>
-          <h2 className="text-2xl font-bold text-slate-800">Create New Invoice</h2>
+          <h2 className="text-2xl font-bold text-slate-800">{isEditing ? 'Edit Invoice' : 'Create New Invoice'}</h2>
         </div>
 
         <div className="bg-white p-8 rounded-xl shadow-sm border border-slate-100 space-y-6">
-          {/* Header Info */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Bill To (Customer)</label>
@@ -186,7 +229,6 @@ export const Invoices = () => {
             </div>
           </div>
 
-          {/* Line Items */}
           <div ref={searchWrapperRef}>
             <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Items</label>
             <div className="bg-slate-50 rounded-lg border border-slate-200 overflow-visible">
@@ -212,7 +254,6 @@ export const Invoices = () => {
                           onChange={e => handleItemChange(item.id, 'description', e.target.value)}
                           onFocus={() => setActiveSearchRow(item.id)}
                         />
-                        {/* Autocomplete Dropdown */}
                         {activeSearchRow === item.id && (
                           <div className="absolute left-2 right-2 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl z-50 max-h-48 overflow-y-auto custom-scrollbar">
                             {products.filter(p => p.name.toLowerCase().includes(item.description.toLowerCase())).map(p => (
@@ -266,9 +307,9 @@ export const Invoices = () => {
           </div>
 
           <div className="flex justify-end gap-3">
-            <button onClick={() => setViewState('LIST')} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg">Cancel</button>
+            <button onClick={() => { setViewState('LIST'); resetForm(); }} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg">Cancel</button>
             <button onClick={handleSave} disabled={!formCustomer || total === 0} className="px-6 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 shadow-md flex items-center gap-2 disabled:opacity-50">
-              <Save size={18} /> Save Invoice
+              <Save size={18} /> {isEditing ? 'Update Invoice' : 'Save Invoice'}
             </button>
           </div>
         </div>
@@ -297,7 +338,6 @@ export const Invoices = () => {
                 padding: 0;
                 box-shadow: none;
               }
-              /* Hide navigation and buttons during print */
               .no-print, button, nav, header {
                 display: none !important;
               }
@@ -319,24 +359,23 @@ export const Invoices = () => {
           </div>
         </div>
 
-        {/* The Paper Invoice Render */}
+        {/* Invoice Paper */}
         <div className="bg-white shadow-2xl mx-auto print:shadow-none" style={{ width: '210mm', minHeight: '297mm' }} id="invoice-content">
           <div className="p-12 h-full flex flex-col relative">
             
-            {/* Header Section */}
+            {/* Header */}
             <div className="flex justify-between items-start border-b-4 border-brand-600 pb-6 mb-8">
               <div className="flex flex-col">
-                 {/* Logo Area */}
                  <div className="flex items-center gap-3 mb-2">
                     <div className="w-12 h-12 bg-brand-600 text-white rounded-lg flex items-center justify-center">
                       <span className="font-bold text-2xl">UK</span>
                     </div>
-                    <h1 className="text-3xl font-bold text-slate-800 tracking-tight">UK Chemicals</h1>
+                    <h1 className="text-3xl font-bold text-slate-800 tracking-tight">{companyInfo.name}</h1>
                  </div>
                  <div className="text-sm text-slate-500 space-y-0.5">
-                   <p>Head Office, Kumasi, Ghana</p>
-                   <p>+233 24 220 3228 | sagyeimenah@yahoo.com</p>
-                   <p>TIN: C001234567</p>
+                   <p>{companyInfo.address}</p>
+                   <p>{companyInfo.phone} | {companyInfo.email}</p>
+                   <p>TIN: {companyInfo.tin}</p>
                  </div>
               </div>
               <div className="text-right">
@@ -354,7 +393,7 @@ export const Invoices = () => {
               </div>
             </div>
 
-            {/* Bill To Section */}
+            {/* Bill To */}
             <div className="mb-10 bg-slate-50 p-6 rounded-lg border border-slate-100 print:bg-transparent print:border-slate-300">
               <h3 className="text-xs font-bold text-brand-600 uppercase mb-2 tracking-wider">Bill To</h3>
               <p className="font-bold text-xl text-slate-900 mb-1">{selectedInvoice.customerName}</p>
@@ -362,7 +401,7 @@ export const Invoices = () => {
               <p className="text-slate-600">{selectedInvoice.customerContact}</p>
             </div>
 
-            {/* Items Table */}
+            {/* Table */}
             <div className="flex-1">
               <table className="w-full mb-8">
                 <thead className="bg-slate-800 text-white print:bg-slate-800 print:text-white">
@@ -388,7 +427,7 @@ export const Invoices = () => {
               </table>
             </div>
 
-            {/* Totals Section */}
+            {/* Footer */}
             <div className="flex flex-col items-end mb-16">
               <div className="w-2/5 space-y-3">
                  <div className="flex justify-between text-slate-600">
@@ -405,7 +444,6 @@ export const Invoices = () => {
                  </div>
               </div>
               
-              {/* Amount in words */}
               <div className="w-full mt-4 border-t border-slate-200 pt-2 text-right">
                  <p className="text-xs font-bold text-slate-500 uppercase">Amount in Words</p>
                  <p className="text-sm font-medium text-slate-800 italic">
@@ -414,7 +452,6 @@ export const Invoices = () => {
               </div>
             </div>
 
-            {/* Signatures & Footer */}
             <div className="mt-auto">
                <div className="flex justify-between items-end mb-12">
                  <div className="w-1/2 text-xs text-slate-400 pr-8">
@@ -423,10 +460,9 @@ export const Invoices = () => {
                    <p>2. Interest @ 24% p.a. will be charged if bill is not paid within 30 days.</p>
                  </div>
                  <div className="text-center">
-                    {/* Signature Line */}
                     <div className="w-48 border-b-2 border-slate-300 mb-2"></div>
                     <p className="font-bold text-slate-800">Authorized Signature</p>
-                    <p className="text-xs text-slate-500">For UK Chemicals Ltd.</p>
+                    <p className="text-xs text-slate-500">For {companyInfo.name}</p>
                  </div>
                </div>
                
@@ -441,7 +477,6 @@ export const Invoices = () => {
     );
   }
 
-  // --- List View ---
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -451,7 +486,7 @@ export const Invoices = () => {
         </div>
         {currentUser?.role === 'MANAGER' && (
           <button 
-            onClick={() => setViewState('CREATE')}
+            onClick={() => { resetForm(); setViewState('CREATE'); }}
             className="bg-brand-600 text-white px-4 py-2 rounded-lg hover:bg-brand-700 transition shadow flex items-center gap-2"
           >
             <Plus size={18} /> Create Invoice
@@ -489,9 +524,14 @@ export const Invoices = () => {
                       <Eye size={18} />
                     </button>
                     {currentUser?.role === 'MANAGER' && (
-                      <button onClick={() => deleteInvoice(inv.id)} className="p-2 text-red-600 hover:bg-red-50 rounded-md" title="Delete">
-                        <Trash2 size={18} />
-                      </button>
+                      <>
+                        <button onClick={() => handleEdit(inv)} className="p-2 text-slate-600 hover:bg-slate-100 rounded-md" title="Edit">
+                          <Edit size={18} />
+                        </button>
+                        <button onClick={() => handleDelete(inv.id)} className="p-2 text-red-600 hover:bg-red-50 rounded-md" title="Delete">
+                          <Trash2 size={18} />
+                        </button>
+                      </>
                     )}
                   </td>
                 </tr>

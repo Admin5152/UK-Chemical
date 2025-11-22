@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from 'react';
-import { Product, LogEntry, User, Notification, Location, UserRole, Supplier, Invoice } from '../types';
+import { Product, LogEntry, User, Notification, Location, UserRole, Supplier, Invoice, CompanyInfo } from '../types';
 import { supabase } from '../lib/supabase';
 
 interface InventoryContextType {
@@ -11,24 +11,28 @@ interface InventoryContextType {
   logs: LogEntry[];
   notifications: Notification[];
   expiryThreshold: number;
+  companyInfo: CompanyInfo;
   login: (email: string, pass: string) => Promise<void>;
   signup: (email: string, pass: string, name: string) => Promise<void>;
   logout: () => Promise<void>;
-  updateUserRole: (userId: string, newRole: UserRole) => void;
-  setExpiryThreshold: (days: number) => void;
-  addProduct: (product: Product) => void;
-  updateProduct: (product: Product) => void;
-  deleteProduct: (id: string) => void;
-  addSupplier: (supplier: Supplier) => void;
-  updateSupplier: (supplier: Supplier) => void;
-  deleteSupplier: (id: string) => void;
+  updateUserRole: (userId: string, newRole: UserRole) => Promise<void>;
+  setExpiryThreshold: (days: number) => Promise<void>;
+  updateCompanyInfo: (info: CompanyInfo) => Promise<void>;
+  addProduct: (product: Product) => Promise<void>;
+  updateProduct: (product: Product) => Promise<void>;
+  deleteProduct: (id: string) => Promise<void>;
+  addSupplier: (supplier: Supplier) => Promise<void>;
+  updateSupplier: (supplier: Supplier) => Promise<void>;
+  deleteSupplier: (id: string) => Promise<void>;
   addInvoice: (invoice: Omit<Invoice, 'id'>) => Promise<void>;
-  deleteInvoice: (id: string) => void;
-  adjustStock: (productId: string, location: Location, delta: number, reason: string) => void;
-  transferStock: (productId: string, from: Location, to: Location, amount: number) => void;
+  updateInvoice: (invoice: Invoice) => Promise<void>;
+  deleteInvoice: (id: string) => Promise<void>;
+  adjustStock: (productId: string, location: Location, delta: number, reason: string) => Promise<void>;
+  transferStock: (productId: string, from: Location, to: Location, amount: number) => Promise<void>;
   markNotificationRead: (id: string) => void;
   loading: boolean;
   error: string | null;
+  clearData: () => void;
 }
 
 const InventoryContext = createContext<InventoryContextType | undefined>(undefined);
@@ -41,6 +45,13 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [expiryThreshold, setExpiryThresholdState] = useState<number>(30);
+  const [companyInfo, setCompanyInfo] = useState<CompanyInfo>({
+    name: 'UK Chemicals',
+    address: 'Head Office, Kumasi, Ghana',
+    phone: '+233 24 220 3228',
+    email: 'sagyeimensah@yahoo.com',
+    tin: 'C001234567'
+  });
   
   // Initialize currentUser from localStorage for instant load perception
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
@@ -88,7 +99,20 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
 
     init();
 
-    return () => { mounted = false; };
+    // Realtime Subscription to sync data across devices
+    const channel = supabase.channel('public:db_changes')
+      .on('postgres_changes', { event: '*', schema: 'public' }, () => {
+        // When any data changes in the DB, refresh our local data
+        if (currentUserIdRef.current) {
+          fetchAllData();
+        }
+      })
+      .subscribe();
+
+    return () => { 
+      mounted = false; 
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const clearData = () => {
@@ -101,6 +125,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
     setLogs([]);
     setNotifications([]);
     localStorage.removeItem('ukchem_user');
+    localStorage.removeItem('ukchem_invoices'); 
   };
 
   const handleUserSession = async (userId: string, email: string | undefined) => {
@@ -124,7 +149,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
           full_name: 'Staff Member',
           role: isSuperAdmin ? 'MANAGER' : 'STAFF'
         };
-        // Try to create profile, if fails (table missing), we handle graceful auth below
+        // Try to create profile
         try {
            await supabase.from('profiles').insert(newProfile).select().single();
         } catch(e) { console.warn("Profile creation failed", e); }
@@ -133,7 +158,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
 
       if (isSuperAdmin) {
         profile.role = 'MANAGER';
-        // Try to sync role to DB in background
+        // Force sync role to DB
         supabase.from('profiles').update({ role: 'MANAGER' }).eq('id', userId).then();
       }
 
@@ -167,13 +192,14 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
   const fetchAllData = async () => {
     try {
       // Use Promise.allSettled-like behavior by catching individual errors
-      const [productsRes, suppliersRes, logsRes, usersRes, settingsRes, invoicesRes] = await Promise.all([
+      const [productsRes, suppliersRes, logsRes, usersRes, settingsRes, invoicesRes, companyRes] = await Promise.all([
         supabase.from('products').select('*'),
         supabase.from('suppliers').select('*'),
         supabase.from('logs').select('*').order('created_at', { ascending: false }).limit(50),
         supabase.from('profiles').select('*'),
         supabase.from('app_settings').select('*').eq('key', 'expiry_threshold').single(),
-        supabase.from('invoices').select('*').order('created_at', { ascending: false })
+        supabase.from('invoices').select('*').order('created_at', { ascending: false }),
+        supabase.from('app_settings').select('*').eq('key', 'company_info').single()
       ]);
 
       if (productsRes.data) {
@@ -206,7 +232,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
         })));
       }
 
-      // Invoice Logic with Strong Fallback
+      // Invoice Logic - ONLY DB
       if (invoicesRes.data) {
         setInvoices(invoicesRes.data.map(i => ({
           id: i.id,
@@ -215,18 +241,12 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
           customerAddress: i.customer_address,
           customerContact: i.customer_contact,
           date: i.date,
-          items: Array.isArray(i.items) ? i.items : [], // Safety check
+          items: Array.isArray(i.items) ? i.items : [], 
           totalAmount: Number(i.total_amount)
         })));
       } else if (invoicesRes.error) {
-        // Fallback to Local Storage if Supabase fails (e.g. missing table)
-        console.warn("Invoices Table Missing/Error, using LocalStorage");
-        try {
-          const localInvoices = localStorage.getItem('ukchem_invoices');
-          if (localInvoices) {
-            setInvoices(JSON.parse(localInvoices));
-          }
-        } catch (e) { console.error("Local invoice load failed", e); }
+        // Explicitly log the message for easier debugging
+        console.error("Invoices fetch failed:", invoicesRes.error.message);
       }
 
       if (logsRes.data) {
@@ -253,8 +273,12 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
         setExpiryThresholdState(Number(settingsRes.data.value));
       }
 
-    } catch (error) {
-      console.error("Error fetching data:", error);
+      if (companyRes.data) {
+        setCompanyInfo(companyRes.data.value);
+      }
+
+    } catch (error: any) {
+      console.error("Error fetching data:", error.message || error);
     }
   };
 
@@ -313,21 +337,15 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       performed_by: currentUser.name
     };
     
-    const optimisticLog: LogEntry = {
-      id: Math.random().toString(),
-      date: new Date().toISOString(),
-      action: action as any,
-      productName,
-      details,
-      performedBy: currentUser.name
-    };
-    setLogs(prev => [optimisticLog, ...prev]);
-
     await supabase.from('logs').insert(newLog);
+    // Note: fetchAllData triggered by Realtime subscription will update the local logs state
   };
 
   const addProduct = async (product: Product) => {
-    if (currentUser?.role !== 'MANAGER') return;
+    if (currentUser?.role !== 'MANAGER') {
+      alert("Only Managers can add products.");
+      return;
+    }
     
     const dbProduct = {
       name: product.name,
@@ -344,18 +362,21 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       supplier: product.supplier
     };
 
-    const { data, error } = await supabase.from('products').insert(dbProduct).select().single();
+    const { error } = await supabase.from('products').insert(dbProduct);
     
-    if (data && !error) {
-      const newProduct = { ...product, id: data.id };
-      setProducts(prev => [...prev, newProduct]);
-      logAction('CREATE', product.name, 'Added new product');
-      checkNotifications([...products, newProduct], expiryThreshold);
+    if (error) {
+      alert("Failed to add product: " + error.message);
+      return;
     }
+    
+    logAction('CREATE', product.name, 'Added new product');
   };
 
   const updateProduct = async (product: Product) => {
-    if (currentUser?.role !== 'MANAGER') return;
+    if (currentUser?.role !== 'MANAGER') {
+      alert("Only Managers can update products.");
+      return;
+    }
 
     const dbProduct = {
       name: product.name,
@@ -374,27 +395,36 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
 
     const { error } = await supabase.from('products').update(dbProduct).eq('id', product.id);
 
-    if (!error) {
-      setProducts(prev => prev.map(p => p.id === product.id ? product : p));
-      logAction('UPDATE', product.name, 'Updated details');
-      checkNotifications(products.map(p => p.id === product.id ? product : p), expiryThreshold);
+    if (error) {
+      alert("Failed to update product: " + error.message);
+      return;
     }
+
+    logAction('UPDATE', product.name, 'Updated details');
   };
 
   const deleteProduct = async (id: string) => {
-    if (currentUser?.role !== 'MANAGER') return;
+    if (currentUser?.role !== 'MANAGER') {
+      alert("Only Managers can delete products.");
+      return;
+    }
     const pName = products.find(p => p.id === id)?.name || 'Product';
     
     const { error } = await supabase.from('products').delete().eq('id', id);
     
-    if (!error) {
-      setProducts(prev => prev.filter(p => p.id !== id));
-      logAction('DELETE', pName, 'Deleted product');
+    if (error) {
+      alert("Failed to delete product: " + error.message);
+      return;
     }
+
+    logAction('DELETE', pName, 'Deleted product');
   };
 
   const addInvoice = async (invoice: Omit<Invoice, 'id'>) => {
-    if (currentUser?.role !== 'MANAGER') return;
+    if (currentUser?.role !== 'MANAGER') {
+      alert("Only Managers can create invoices.");
+      return;
+    }
 
     const dbInvoice = {
       invoice_number: invoice.invoiceNumber,
@@ -407,41 +437,54 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       created_by: currentUser.id
     };
 
-    // Try to insert into Supabase
-    const { data, error } = await supabase.from('invoices').insert(dbInvoice).select().single();
+    const { error } = await supabase.from('invoices').insert(dbInvoice);
     
-    if (data && !error) {
-      // Database Success
-      const newInvoice = { ...invoice, id: data.id };
-      setInvoices(prev => [newInvoice, ...prev]);
-      logAction('CREATE', `Invoice ${invoice.invoiceNumber}`, `Created invoice for ${invoice.customerName}`);
-    } else {
-      // Fallback to Local Storage if database insert fails (e.g. table missing)
-      console.warn("Database Insert Failed, Saving Locally", error);
-      const fallbackId = Math.random().toString();
-      const newInvoice = { ...invoice, id: fallbackId };
-      
-      setInvoices(prev => {
-        const updated = [newInvoice, ...prev];
-        localStorage.setItem('ukchem_invoices', JSON.stringify(updated));
-        return updated;
-      });
-      logAction('CREATE', `Invoice ${invoice.invoiceNumber}`, `Created invoice (Local Save)`);
+    if (error) {
+      alert("Failed to save invoice to database: " + error.message);
+      return;
     }
+
+    logAction('CREATE', `Invoice ${invoice.invoiceNumber}`, `Created invoice for ${invoice.customerName}`);
+  };
+
+  const updateInvoice = async (invoice: Invoice) => {
+    if (currentUser?.role !== 'MANAGER') {
+      alert("Only Managers can update invoices.");
+      return;
+    }
+
+    const dbInvoice = {
+      invoice_number: invoice.invoiceNumber,
+      customer_name: invoice.customerName,
+      customer_address: invoice.customerAddress,
+      customer_contact: invoice.customerContact,
+      date: invoice.date,
+      items: invoice.items,
+      total_amount: invoice.totalAmount
+    };
+
+    const { error } = await supabase.from('invoices').update(dbInvoice).eq('id', invoice.id);
+
+    if (error) {
+      alert("Failed to update invoice: " + error.message);
+      return;
+    }
+
+    logAction('UPDATE', `Invoice ${invoice.invoiceNumber}`, `Updated invoice`);
   };
 
   const deleteInvoice = async (id: string) => {
-    if (currentUser?.role !== 'MANAGER') return;
+    if (currentUser?.role !== 'MANAGER') {
+      alert("Only Managers can delete invoices.");
+      return;
+    }
     
-    // Try delete from Supabase
-    await supabase.from('invoices').delete().eq('id', id);
+    const { error } = await supabase.from('invoices').delete().eq('id', id);
     
-    // Always update local state and localStorage to be safe
-    setInvoices(prev => {
-      const updated = prev.filter(i => i.id !== id);
-      localStorage.setItem('ukchem_invoices', JSON.stringify(updated));
-      return updated;
-    });
+    if (error) {
+      alert("Failed to delete invoice: " + error.message);
+      return;
+    }
   };
 
   const adjustStock = async (productId: string, location: Location, delta: number, reason: string) => {
@@ -457,15 +500,12 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       .update({ [updateField]: newQty })
       .eq('id', productId);
 
-    if (!error) {
-      const updatedProduct = {
-        ...product,
-        qtyWarehouse: location === 'Warehouse' ? newQty : product.qtyWarehouse,
-        qtyOffice: location === 'Main Office' ? newQty : product.qtyOffice
-      };
-      setProducts(prev => prev.map(p => p.id === productId ? updatedProduct : p));
-      logAction(delta > 0 ? 'ADD' : 'REMOVE', product.name, `${reason} (${delta})`);
+    if (error) {
+      alert("Failed to adjust stock: " + error.message);
+      return;
     }
+
+    logAction(delta > 0 ? 'ADD' : 'REMOVE', product.name, `${reason} (${delta})`);
   };
 
   const transferStock = async (productId: string, from: Location, to: Location, amount: number) => {
@@ -485,26 +525,25 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       .update(updatePayload)
       .eq('id', productId);
 
-    if (!error) {
-      const updatedProduct = {
-        ...product,
-        qtyWarehouse: updatePayload.qty_warehouse,
-        qtyOffice: updatePayload.qty_office
-      };
-      setProducts(prev => prev.map(p => p.id === productId ? updatedProduct : p));
-      logAction('TRANSFER', product.name, `Moved ${amount} ${product.unit} to ${to}`);
+    if (error) {
+      alert("Failed to transfer stock: " + error.message);
+      return;
     }
+
+    logAction('TRANSFER', product.name, `Moved ${amount} ${product.unit} to ${to}`);
   };
 
   const addSupplier = async (supplier: Supplier) => {
-    const { data, error } = await supabase.from('suppliers').insert({
+    const { error } = await supabase.from('suppliers').insert({
       company_name: supplier.companyName,
       contact_name: supplier.contactName,
       email: supplier.email,
       phone: supplier.phone
-    }).select().single();
-    if (data && !error) {
-      setSuppliers(prev => [...prev, { ...supplier, id: data.id }]);
+    });
+    
+    if (error) {
+      alert("Failed to add supplier: " + error.message);
+      return;
     }
   };
 
@@ -515,22 +554,26 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       email: supplier.email,
       phone: supplier.phone
     }).eq('id', supplier.id);
-    if (!error) {
-      setSuppliers(prev => prev.map(s => s.id === supplier.id ? supplier : s));
+    
+    if (error) {
+      alert("Failed to update supplier: " + error.message);
+      return;
     }
   };
 
   const deleteSupplier = async (id: string) => {
     const { error } = await supabase.from('suppliers').delete().eq('id', id);
-    if (!error) {
-      setSuppliers(prev => prev.filter(s => s.id !== id));
+    if (error) {
+      alert("Failed to delete supplier: " + error.message);
+      return;
     }
   };
 
   const updateUserRole = async (userId: string, newRole: UserRole) => {
     const { error } = await supabase.from('profiles').update({ role: newRole }).eq('id', userId);
-    if (!error) {
-      setUsers(prev => prev.map(u => u.id === userId ? { ...u, role: newRole } : u));
+    if (error) {
+      alert("Failed to update role: " + error.message);
+      return;
     }
   };
 
@@ -540,6 +583,15 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       setExpiryThresholdState(days);
       checkNotifications(products, days);
     }
+  };
+
+  const updateCompanyInfo = async (info: CompanyInfo) => {
+    const { error } = await supabase.from('app_settings').upsert({ key: 'company_info', value: info });
+    if (error) {
+      alert("Failed to save settings: " + error.message);
+      return;
+    }
+    setCompanyInfo(info);
   };
 
   const markNotificationRead = (id: string) => {
@@ -561,19 +613,20 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
   };
 
   const logout = async () => {
-    await supabase.auth.signOut();
     clearData();
+    await supabase.auth.signOut();
+    window.location.reload();
   };
 
   return (
     <InventoryContext.Provider value={{
-      currentUser, users, products, suppliers, invoices, logs, notifications, expiryThreshold,
-      login, signup, logout, updateUserRole, setExpiryThreshold,
+      currentUser, users, products, suppliers, invoices, logs, notifications, expiryThreshold, companyInfo,
+      login, signup, logout, updateUserRole, setExpiryThreshold, updateCompanyInfo,
       addProduct, updateProduct, deleteProduct,
       addSupplier, updateSupplier, deleteSupplier,
-      addInvoice, deleteInvoice,
+      addInvoice, updateInvoice, deleteInvoice,
       adjustStock, transferStock, markNotificationRead,
-      loading, error
+      loading, error, clearData
     }}>
       {children}
     </InventoryContext.Provider>

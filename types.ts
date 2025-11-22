@@ -70,6 +70,15 @@ export interface Invoice {
   totalAmount: number;
 }
 
+export interface CompanyInfo {
+  name: string;
+  address: string;
+  phone: string;
+  email: string;
+  tin: string;
+  logoUrl?: string;
+}
+
 export interface FilterState {
   search: string;
   category: string;
