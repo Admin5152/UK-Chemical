@@ -1,3 +1,4 @@
+
 import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from 'react';
 import { Product, LogEntry, User, Notification, Location, UserRole, Supplier, Invoice, CompanyInfo } from '../types';
 import { supabase } from '../lib/supabase';
@@ -18,21 +19,22 @@ interface InventoryContextType {
   updateUserRole: (userId: string, newRole: UserRole) => Promise<void>;
   setExpiryThreshold: (days: number) => Promise<void>;
   updateCompanyInfo: (info: CompanyInfo) => Promise<void>;
-  addProduct: (product: Product) => Promise<void>;
-  updateProduct: (product: Product) => Promise<void>;
-  deleteProduct: (id: string) => Promise<void>;
-  addSupplier: (supplier: Supplier) => Promise<void>;
-  updateSupplier: (supplier: Supplier) => Promise<void>;
-  deleteSupplier: (id: string) => Promise<void>;
-  addInvoice: (invoice: Omit<Invoice, 'id'>) => Promise<void>;
-  updateInvoice: (invoice: Invoice) => Promise<void>;
-  deleteInvoice: (id: string) => Promise<void>;
+  addProduct: (product: Product) => Promise<boolean>;
+  updateProduct: (product: Product) => Promise<boolean>;
+  deleteProduct: (id: string) => Promise<boolean>;
+  addSupplier: (supplier: Supplier) => Promise<boolean>;
+  updateSupplier: (supplier: Supplier) => Promise<boolean>;
+  deleteSupplier: (id: string) => Promise<boolean>;
+  addInvoice: (invoice: Omit<Invoice, 'id'>) => Promise<boolean>;
+  updateInvoice: (invoice: Invoice) => Promise<boolean>;
+  deleteInvoice: (id: string) => Promise<boolean>;
   adjustStock: (productId: string, location: Location, delta: number, reason: string) => Promise<void>;
   transferStock: (productId: string, from: Location, to: Location, amount: number) => Promise<void>;
   markNotificationRead: (id: string) => void;
   loading: boolean;
   error: string | null;
   clearData: () => void;
+  dbHealth: { invoices: boolean; products: boolean };
 }
 
 const InventoryContext = createContext<InventoryContextType | undefined>(undefined);
@@ -50,9 +52,13 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
     address: 'Head Office, Kumasi, Ghana',
     phone: '+233 24 220 3228',
     email: 'sagyeimensah@yahoo.com',
-    tin: 'C001234567'
+    tin: 'C001234567',
+    terms: '1. Goods once sold will not be taken back.\n2. Interest @ 24% p.a. will be charged if bill is not paid within 30 days.'
   });
   
+  // DB Health Check
+  const [dbHealth, setDbHealth] = useState({ invoices: true, products: true });
+
   // Initialize currentUser from localStorage for instant load perception
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
     try {
@@ -66,6 +72,13 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
   
   const isFetching = useRef(false);
   const currentUserIdRef = useRef<string | null>(currentUser?.id || null);
+
+  // Helper to check missing table errors
+  const isMissingTableError = (err: any) => {
+    return err?.code === '42P01' || 
+           err?.message?.includes('Could not find the table') || 
+           err?.message?.includes('relation "public.invoices" does not exist');
+  };
 
   // --- Initialization & Auth ---
   useEffect(() => {
@@ -220,6 +233,9 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
         }));
         setProducts(formattedProducts);
         checkNotifications(formattedProducts, settingsRes.data?.value || 30);
+        setDbHealth(prev => ({ ...prev, products: true }));
+      } else if (isMissingTableError(productsRes.error)) {
+        setDbHealth(prev => ({ ...prev, products: false }));
       }
 
       if (suppliersRes.data) {
@@ -244,9 +260,16 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
           items: Array.isArray(i.items) ? i.items : [], 
           totalAmount: Number(i.total_amount)
         })));
+        setDbHealth(prev => ({ ...prev, invoices: true }));
       } else if (invoicesRes.error) {
-        // Explicitly log the message for easier debugging
-        console.error("Invoices fetch failed:", invoicesRes.error.message);
+        // If table is missing (42P01 or text match), mark health as false
+        if (isMissingTableError(invoicesRes.error)) {
+          console.warn("Invoices table missing. Go to Settings to fix.");
+          setDbHealth(prev => ({ ...prev, invoices: false }));
+          setInvoices([]);
+        } else {
+          console.error("Invoices fetch failed:", invoicesRes.error.message);
+        }
       }
 
       if (logsRes.data) {
@@ -274,7 +297,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       }
 
       if (companyRes.data) {
-        setCompanyInfo(companyRes.data.value);
+        setCompanyInfo(prev => ({ ...prev, ...companyRes.data.value }));
       }
 
     } catch (error: any) {
@@ -341,10 +364,10 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
     // Note: fetchAllData triggered by Realtime subscription will update the local logs state
   };
 
-  const addProduct = async (product: Product) => {
+  const addProduct = async (product: Product): Promise<boolean> => {
     if (currentUser?.role !== 'MANAGER') {
       alert("Only Managers can add products.");
-      return;
+      return false;
     }
     
     const dbProduct = {
@@ -354,8 +377,8 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       qty_warehouse: product.qtyWarehouse,
       qty_office: product.qtyOffice,
       reorder_level: product.reorderLevel,
-      production_date: product.productionDate,
-      expiration_date: product.expirationDate,
+      production_date: product.productionDate || null,
+      expiration_date: product.expirationDate || null,
       origin: product.origin,
       delivery_agent: product.deliveryAgent,
       price: product.price,
@@ -366,16 +389,19 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
     
     if (error) {
       alert("Failed to add product: " + error.message);
-      return;
+      return false;
     }
     
     logAction('CREATE', product.name, 'Added new product');
+    // Optimistic update
+    setProducts(prev => [...prev, product]);
+    return true;
   };
 
-  const updateProduct = async (product: Product) => {
+  const updateProduct = async (product: Product): Promise<boolean> => {
     if (currentUser?.role !== 'MANAGER') {
       alert("Only Managers can update products.");
-      return;
+      return false;
     }
 
     const dbProduct = {
@@ -385,8 +411,8 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       qty_warehouse: product.qtyWarehouse,
       qty_office: product.qtyOffice,
       reorder_level: product.reorderLevel,
-      production_date: product.productionDate,
-      expiration_date: product.expirationDate,
+      production_date: product.productionDate || null,
+      expiration_date: product.expirationDate || null,
       origin: product.origin,
       delivery_agent: product.deliveryAgent,
       price: product.price,
@@ -397,33 +423,39 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
 
     if (error) {
       alert("Failed to update product: " + error.message);
-      return;
+      return false;
     }
 
     logAction('UPDATE', product.name, 'Updated details');
+    // Optimistic update
+    setProducts(prev => prev.map(p => p.id === product.id ? product : p));
+    return true;
   };
 
-  const deleteProduct = async (id: string) => {
+  const deleteProduct = async (id: string): Promise<boolean> => {
     if (currentUser?.role !== 'MANAGER') {
       alert("Only Managers can delete products.");
-      return;
+      return false;
     }
+    
     const pName = products.find(p => p.id === id)?.name || 'Product';
     
     const { error } = await supabase.from('products').delete().eq('id', id);
     
     if (error) {
       alert("Failed to delete product: " + error.message);
-      return;
+      return false;
     }
 
     logAction('DELETE', pName, 'Deleted product');
+    setProducts(prev => prev.filter(p => p.id !== id));
+    return true;
   };
 
-  const addInvoice = async (invoice: Omit<Invoice, 'id'>) => {
+  const addInvoice = async (invoice: Omit<Invoice, 'id'>): Promise<boolean> => {
     if (currentUser?.role !== 'MANAGER') {
       alert("Only Managers can create invoices.");
-      return;
+      return false;
     }
 
     const dbInvoice = {
@@ -440,17 +472,22 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
     const { error } = await supabase.from('invoices').insert(dbInvoice);
     
     if (error) {
-      alert("Failed to save invoice to database: " + error.message);
-      return;
+      if (isMissingTableError(error)) {
+        alert("CRITICAL ERROR: The 'invoices' table is missing in your database.\n\nGo to 'Settings' -> 'Database Diagnostics' in this app to get the SQL code to fix this.");
+      } else {
+        alert("Failed to save invoice: " + error.message);
+      }
+      return false;
     }
 
     logAction('CREATE', `Invoice ${invoice.invoiceNumber}`, `Created invoice for ${invoice.customerName}`);
+    return true;
   };
 
-  const updateInvoice = async (invoice: Invoice) => {
+  const updateInvoice = async (invoice: Invoice): Promise<boolean> => {
     if (currentUser?.role !== 'MANAGER') {
       alert("Only Managers can update invoices.");
-      return;
+      return false;
     }
 
     const dbInvoice = {
@@ -466,25 +503,33 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
     const { error } = await supabase.from('invoices').update(dbInvoice).eq('id', invoice.id);
 
     if (error) {
-      alert("Failed to update invoice: " + error.message);
-      return;
+      if (isMissingTableError(error)) {
+        alert("CRITICAL ERROR: The 'invoices' table is missing.\n\nGo to Settings to get the fix script.");
+      } else {
+        alert("Failed to update invoice: " + error.message);
+      }
+      return false;
     }
 
     logAction('UPDATE', `Invoice ${invoice.invoiceNumber}`, `Updated invoice`);
+    return true;
   };
 
-  const deleteInvoice = async (id: string) => {
+  const deleteInvoice = async (id: string): Promise<boolean> => {
     if (currentUser?.role !== 'MANAGER') {
       alert("Only Managers can delete invoices.");
-      return;
+      return false;
     }
     
     const { error } = await supabase.from('invoices').delete().eq('id', id);
     
     if (error) {
       alert("Failed to delete invoice: " + error.message);
-      return;
+      return false;
     }
+    
+    setInvoices(prev => prev.filter(i => i.id !== id));
+    return true;
   };
 
   const adjustStock = async (productId: string, location: Location, delta: number, reason: string) => {
@@ -533,7 +578,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
     logAction('TRANSFER', product.name, `Moved ${amount} ${product.unit} to ${to}`);
   };
 
-  const addSupplier = async (supplier: Supplier) => {
+  const addSupplier = async (supplier: Supplier): Promise<boolean> => {
     const { error } = await supabase.from('suppliers').insert({
       company_name: supplier.companyName,
       contact_name: supplier.contactName,
@@ -543,11 +588,13 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
     
     if (error) {
       alert("Failed to add supplier: " + error.message);
-      return;
+      return false;
     }
+    setSuppliers(prev => [...prev, supplier]);
+    return true;
   };
 
-  const updateSupplier = async (supplier: Supplier) => {
+  const updateSupplier = async (supplier: Supplier): Promise<boolean> => {
     const { error } = await supabase.from('suppliers').update({
       company_name: supplier.companyName,
       contact_name: supplier.contactName,
@@ -557,16 +604,20 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
     
     if (error) {
       alert("Failed to update supplier: " + error.message);
-      return;
+      return false;
     }
+    setSuppliers(prev => prev.map(s => s.id === supplier.id ? supplier : s));
+    return true;
   };
 
-  const deleteSupplier = async (id: string) => {
+  const deleteSupplier = async (id: string): Promise<boolean> => {
     const { error } = await supabase.from('suppliers').delete().eq('id', id);
     if (error) {
       alert("Failed to delete supplier: " + error.message);
-      return;
+      return false;
     }
+    setSuppliers(prev => prev.filter(s => s.id !== id));
+    return true;
   };
 
   const updateUserRole = async (userId: string, newRole: UserRole) => {
@@ -613,9 +664,14 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
   };
 
   const logout = async () => {
-    clearData();
-    await supabase.auth.signOut();
-    window.location.reload();
+    try {
+      clearData();
+      await supabase.auth.signOut();
+    } catch (e) {
+      console.warn("Sign out error", e);
+    } finally {
+      window.location.reload();
+    }
   };
 
   return (
@@ -626,7 +682,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       addSupplier, updateSupplier, deleteSupplier,
       addInvoice, updateInvoice, deleteInvoice,
       adjustStock, transferStock, markNotificationRead,
-      loading, error, clearData
+      loading, error, clearData, dbHealth
     }}>
       {children}
     </InventoryContext.Provider>

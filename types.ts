@@ -1,3 +1,4 @@
+
 export type UserRole = 'MANAGER' | 'STAFF';
 
 export type Location = 'Warehouse' | 'Main Office';
@@ -77,6 +78,7 @@ export interface CompanyInfo {
   email: string;
   tin: string;
   logoUrl?: string;
+  terms?: string;
 }
 
 export interface FilterState {

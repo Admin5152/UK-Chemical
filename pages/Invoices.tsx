@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { useInventory } from '../context/InventoryContext';
 import { Invoice, InvoiceItem, Product } from '../types';
@@ -44,6 +45,7 @@ export const Invoices = () => {
   const [viewState, setViewState] = useState<'LIST' | 'CREATE' | 'PREVIEW'>('LIST');
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
   const [isEditing, setIsEditing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   // Create Form State
   const [formCustomer, setFormCustomer] = useState('');
@@ -106,32 +108,43 @@ export const Invoices = () => {
 
   const handleSave = async () => {
     const total = formItems.reduce((sum, item) => sum + item.amount, 0);
+    setIsSaving(true);
+    let success = false;
     
-    if (isEditing && selectedInvoice) {
-      await updateInvoice({
-        ...selectedInvoice,
-        customerName: formCustomer,
-        customerAddress: formAddress,
-        customerContact: formContact,
-        date: formDate,
-        items: formItems,
-        totalAmount: total
-      });
-    } else {
-      const invoiceNumber = `INV-${new Date().getFullYear()}${Math.floor(1000 + Math.random() * 9000)}`;
-      await addInvoice({
-        invoiceNumber,
-        customerName: formCustomer,
-        customerAddress: formAddress,
-        customerContact: formContact,
-        date: formDate,
-        items: formItems,
-        totalAmount: total
-      });
-    }
+    try {
+      if (isEditing && selectedInvoice) {
+        success = await updateInvoice({
+          ...selectedInvoice,
+          customerName: formCustomer,
+          customerAddress: formAddress,
+          customerContact: formContact,
+          date: formDate,
+          items: formItems,
+          totalAmount: total
+        });
+      } else {
+        const invoiceNumber = `INV-${new Date().getFullYear()}${Math.floor(1000 + Math.random() * 9000)}`;
+        success = await addInvoice({
+          invoiceNumber,
+          customerName: formCustomer,
+          customerAddress: formAddress,
+          customerContact: formContact,
+          date: formDate,
+          items: formItems,
+          totalAmount: total
+        });
+      }
 
-    setViewState('LIST');
-    resetForm();
+      if (success) {
+        setViewState('LIST');
+        resetForm();
+      }
+    } catch (e) {
+      console.error("Save failed", e);
+      alert("An unexpected error occurred while saving.");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const resetForm = () => {
@@ -159,9 +172,12 @@ export const Invoices = () => {
     setViewState('CREATE');
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (window.confirm("Are you sure you want to delete this invoice? This cannot be undone.")) {
-      deleteInvoice(id);
+      const success = await deleteInvoice(id);
+      if (success) {
+        // UI update handled by realtime subscription in context
+      }
     }
   };
 
@@ -179,19 +195,23 @@ export const Invoices = () => {
       filename:     `${selectedInvoice.invoiceNumber}.pdf`,
       image:        { type: 'jpeg', quality: 0.98 },
       html2canvas:  { 
-        scale: isMobile ? 1 : 2, // Use lower scale for mobile to prevent crashes
+        scale: isMobile ? 1 : 2, 
         useCORS: true, 
         scrollY: 0,
-        windowWidth: 794 // A4 width in pixels (approx) to force desktop rendering
+        windowWidth: 794 
       },
       jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
     };
 
     // Use html2pdf chain
-    html2pdf().set(opt).from(element).save().catch((err: any) => {
-      console.error("PDF Download failed", err);
-      alert("Download failed. Please check your browser settings or try on a desktop.");
-    });
+    if (typeof html2pdf !== 'undefined') {
+        html2pdf().set(opt).from(element).save().catch((err: any) => {
+          console.error("PDF Download failed", err);
+          alert("Download failed. Please check your browser settings or try on a desktop.");
+        });
+    } else {
+        alert("PDF generator library not loaded. Please refresh the page.");
+    }
   };
 
   const handlePrint = () => {
@@ -308,8 +328,12 @@ export const Invoices = () => {
 
           <div className="flex justify-end gap-3">
             <button onClick={() => { setViewState('LIST'); resetForm(); }} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg">Cancel</button>
-            <button onClick={handleSave} disabled={!formCustomer || total === 0} className="px-6 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 shadow-md flex items-center gap-2 disabled:opacity-50">
-              <Save size={18} /> {isEditing ? 'Update Invoice' : 'Save Invoice'}
+            <button 
+              onClick={handleSave} 
+              disabled={!formCustomer || total === 0 || isSaving} 
+              className="px-6 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 shadow-md flex items-center gap-2 disabled:opacity-50"
+            >
+              <Save size={18} /> {isSaving ? 'Saving...' : (isEditing ? 'Update Invoice' : 'Save Invoice')}
             </button>
           </div>
         </div>
@@ -456,8 +480,7 @@ export const Invoices = () => {
                <div className="flex justify-between items-end mb-12">
                  <div className="w-1/2 text-xs text-slate-400 pr-8">
                    <p className="font-bold text-slate-600 mb-1">Terms & Conditions:</p>
-                   <p>1. Goods once sold will not be taken back.</p>
-                   <p>2. Interest @ 24% p.a. will be charged if bill is not paid within 30 days.</p>
+                   <div className="whitespace-pre-line">{companyInfo.terms}</div>
                  </div>
                  <div className="text-center">
                     <div className="w-48 border-b-2 border-slate-300 mb-2"></div>
