@@ -138,7 +138,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
     setLogs([]);
     setNotifications([]);
     localStorage.removeItem('ukchem_user');
-    localStorage.removeItem('ukchem_invoices'); 
+    // We DO NOT remove 'ukchem_invoices' here to preserve offline data
   };
 
   const handleUserSession = async (userId: string, email: string | undefined) => {
@@ -248,9 +248,12 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
         })));
       }
 
-      // Invoice Logic - ONLY DB
+      // --- HYBRID INVOICE LOADING ---
+      let fetchedInvoices: Invoice[] = [];
+      
+      // 1. Load from DB
       if (invoicesRes.data) {
-        setInvoices(invoicesRes.data.map(i => ({
+        fetchedInvoices = invoicesRes.data.map(i => ({
           id: i.id,
           invoiceNumber: i.invoice_number,
           customerName: i.customer_name,
@@ -259,18 +262,33 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
           date: i.date,
           items: Array.isArray(i.items) ? i.items : [], 
           totalAmount: Number(i.total_amount)
-        })));
+        }));
         setDbHealth(prev => ({ ...prev, invoices: true }));
       } else if (invoicesRes.error) {
-        // If table is missing (42P01 or text match), mark health as false
         if (isMissingTableError(invoicesRes.error)) {
-          console.warn("Invoices table missing. Go to Settings to fix.");
+          console.warn("Invoices table missing. Using local storage.");
           setDbHealth(prev => ({ ...prev, invoices: false }));
-          setInvoices([]);
         } else {
           console.error("Invoices fetch failed:", invoicesRes.error.message);
         }
       }
+
+      // 2. Load from Local Storage (Fallback/Offline data)
+      const localInvoicesStr = localStorage.getItem('ukchem_invoices');
+      if (localInvoicesStr) {
+        const localInvoices: Invoice[] = JSON.parse(localInvoicesStr);
+        // Merge: Add local invoices if they are not already in the DB list (by ID)
+        localInvoices.forEach(localInv => {
+          if (!fetchedInvoices.find(dbInv => dbInv.id === localInv.id)) {
+            fetchedInvoices.push(localInv);
+          }
+        });
+      }
+
+      // Sort merged list by date desc
+      fetchedInvoices.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      setInvoices(fetchedInvoices);
+      // -----------------------------
 
       if (logsRes.data) {
         setLogs(logsRes.data.map(l => ({
@@ -361,7 +379,6 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
     };
     
     await supabase.from('logs').insert(newLog);
-    // Note: fetchAllData triggered by Realtime subscription will update the local logs state
   };
 
   const addProduct = async (product: Product): Promise<boolean> => {
@@ -393,7 +410,6 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
     }
     
     logAction('CREATE', product.name, 'Added new product');
-    // Optimistic update
     setProducts(prev => [...prev, product]);
     return true;
   };
@@ -427,7 +443,6 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
     }
 
     logAction('UPDATE', product.name, 'Updated details');
-    // Optimistic update
     setProducts(prev => prev.map(p => p.id === product.id ? product : p));
     return true;
   };
@@ -439,7 +454,6 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
     }
     
     const pName = products.find(p => p.id === id)?.name || 'Product';
-    
     const { error } = await supabase.from('products').delete().eq('id', id);
     
     if (error) {
@@ -452,35 +466,92 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
     return true;
   };
 
-  const addInvoice = async (invoice: Omit<Invoice, 'id'>): Promise<boolean> => {
+  // --- HYBRID INVOICE ACTIONS ---
+
+  const saveInvoiceToLocal = (invoice: Invoice) => {
+    try {
+      const saved = localStorage.getItem('ukchem_invoices');
+      let currentList: Invoice[] = saved ? JSON.parse(saved) : [];
+      
+      // Remove existing if update
+      currentList = currentList.filter(i => i.id !== invoice.id);
+      currentList.push(invoice);
+      
+      localStorage.setItem('ukchem_invoices', JSON.stringify(currentList));
+      
+      // Update state
+      setInvoices(prev => {
+        const filtered = prev.filter(i => i.id !== invoice.id);
+        return [invoice, ...filtered].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      });
+      
+      alert("Database offline/unavailable. Invoice saved to LOCAL storage.");
+      return true;
+    } catch (e) {
+      console.error("Local save failed", e);
+      return false;
+    }
+  };
+
+  const deleteInvoiceFromLocal = (id: string) => {
+    const saved = localStorage.getItem('ukchem_invoices');
+    if (saved) {
+      let currentList: Invoice[] = JSON.parse(saved);
+      currentList = currentList.filter(i => i.id !== id);
+      localStorage.setItem('ukchem_invoices', JSON.stringify(currentList));
+    }
+    setInvoices(prev => prev.filter(i => i.id !== id));
+  };
+
+  const addInvoice = async (invoiceData: Omit<Invoice, 'id'>): Promise<boolean> => {
     if (currentUser?.role !== 'MANAGER') {
       alert("Only Managers can create invoices.");
       return false;
     }
 
+    // Prepare invoice object with a UUID (either from DB or generated locally)
+    // We let DB generate ID usually, but for hybrid we might need one.
+    // We will try DB first.
+    
     const dbInvoice = {
-      invoice_number: invoice.invoiceNumber,
-      customer_name: invoice.customerName,
-      customer_address: invoice.customerAddress,
-      customer_contact: invoice.customerContact,
-      date: invoice.date,
-      items: invoice.items,
-      total_amount: invoice.totalAmount,
+      invoice_number: invoiceData.invoiceNumber,
+      customer_name: invoiceData.customerName,
+      customer_address: invoiceData.customerAddress,
+      customer_contact: invoiceData.customerContact,
+      date: invoiceData.date,
+      items: invoiceData.items,
+      total_amount: invoiceData.totalAmount,
       created_by: currentUser.id
     };
 
-    const { error } = await supabase.from('invoices').insert(dbInvoice);
+    const { data, error } = await supabase.from('invoices').insert(dbInvoice).select().single();
     
     if (error) {
-      if (isMissingTableError(error)) {
-        alert("CRITICAL ERROR: The 'invoices' table is missing in your database.\n\nGo to 'Settings' -> 'Database Diagnostics' in this app to get the SQL code to fix this.");
-      } else {
-        alert("Failed to save invoice: " + error.message);
-      }
-      return false;
+      console.warn("DB Save Failed, trying local...", error);
+      // FALLBACK TO LOCAL
+      const localId = 'local-' + Math.random().toString(36).substr(2, 9);
+      const localInvoice: Invoice = {
+        id: localId,
+        ...invoiceData
+      };
+      return saveInvoiceToLocal(localInvoice);
     }
 
-    logAction('CREATE', `Invoice ${invoice.invoiceNumber}`, `Created invoice for ${invoice.customerName}`);
+    // Success from DB
+    if (data) {
+      const newInv: Invoice = {
+        id: data.id,
+        invoiceNumber: data.invoice_number,
+        customerName: data.customer_name,
+        customerAddress: data.customer_address,
+        customerContact: data.customer_contact,
+        date: data.date,
+        items: data.items,
+        totalAmount: data.total_amount
+      };
+      setInvoices(prev => [newInv, ...prev]);
+      logAction('CREATE', `Invoice ${invoiceData.invoiceNumber}`, `Created invoice`);
+    }
     return true;
   };
 
@@ -500,17 +571,20 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       total_amount: invoice.totalAmount
     };
 
+    // Check if it is a local-only invoice
+    if (invoice.id.startsWith('local-')) {
+      return saveInvoiceToLocal(invoice);
+    }
+
     const { error } = await supabase.from('invoices').update(dbInvoice).eq('id', invoice.id);
 
     if (error) {
-      if (isMissingTableError(error)) {
-        alert("CRITICAL ERROR: The 'invoices' table is missing.\n\nGo to Settings to get the fix script.");
-      } else {
-        alert("Failed to update invoice: " + error.message);
-      }
-      return false;
+      console.warn("DB Update Failed, trying local...", error);
+      // Fallback: save to local storage to prevent data loss
+      return saveInvoiceToLocal(invoice);
     }
 
+    setInvoices(prev => prev.map(i => i.id === invoice.id ? invoice : i));
     logAction('UPDATE', `Invoice ${invoice.invoiceNumber}`, `Updated invoice`);
     return true;
   };
@@ -521,11 +595,19 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       return false;
     }
     
+    if (id.startsWith('local-')) {
+      deleteInvoiceFromLocal(id);
+      return true;
+    }
+
     const { error } = await supabase.from('invoices').delete().eq('id', id);
     
     if (error) {
-      alert("Failed to delete invoice: " + error.message);
-      return false;
+      console.warn("DB Delete failed, force removing locally", error);
+      // Even if DB fails, remove from view
+      deleteInvoiceFromLocal(id);
+      alert("Could not connect to database, but invoice removed from your view.");
+      return true;
     }
     
     setInvoices(prev => prev.filter(i => i.id !== id));
