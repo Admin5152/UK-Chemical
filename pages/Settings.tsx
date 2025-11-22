@@ -51,7 +51,11 @@ export const Settings = () => {
   };
 
   const INVOICE_SQL = `
-create table if not exists public.invoices (
+-- 1. DROP TABLE to ensure clean slate
+DROP TABLE IF EXISTS public.invoices;
+
+-- 2. CREATE TABLE without strict Foreign Key to avoid conflicts
+CREATE TABLE public.invoices (
   id uuid default gen_random_uuid() primary key,
   created_at timestamptz default now(),
   invoice_number text not null,
@@ -63,8 +67,11 @@ create table if not exists public.invoices (
   total_amount numeric default 0,
   created_by uuid
 );
-alter table public.invoices enable row level security;
-create policy "Enable all access" on public.invoices for all using (true);
+
+-- 3. ENABLE RLS & PERMISSIONS
+ALTER TABLE public.invoices ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Enable all access" ON public.invoices FOR ALL USING (true);
+GRANT ALL ON public.invoices TO anon, authenticated, service_role;
   `.trim();
 
   const handleCopySQL = () => {
@@ -249,7 +256,7 @@ create policy "Enable all access" on public.invoices for all using (true);
                       <AlertTriangle size={18} /> Invoice Table Missing
                     </h4>
                     <p className="text-red-600 text-sm mt-1">
-                      Your database is missing the required 'invoices' table. Invoices cannot be saved.
+                      The 'invoices' table was not found or permissions are denied.
                     </p>
                   </div>
                   
@@ -273,7 +280,7 @@ create policy "Enable all access" on public.invoices for all using (true);
                       <li>Go to your <a href="https://supabase.com/dashboard" target="_blank" rel="noreferrer" className="text-brand-600 underline">Supabase Dashboard</a>.</li>
                       <li>Open the <strong>SQL Editor</strong> tab.</li>
                       <li>Paste the code and click <strong>Run</strong>.</li>
-                      <li>Refresh this page.</li>
+                      <li><strong>Refresh this page</strong> to reconnect.</li>
                     </ol>
                   </div>
                 </div>

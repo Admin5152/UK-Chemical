@@ -184,33 +184,61 @@ export const Invoices = () => {
   const handleDownloadPDF = () => {
     if (!selectedInvoice) return;
     
-    // Scroll to top to ensure capture works
-    window.scrollTo(0, 0);
-
+    // 1. Get original element
     const element = document.getElementById('invoice-content');
+    if (!element) return;
+
+    // 2. Clone the element to isolate it from the app layout (sidebar, backgrounds, etc)
+    const clone = element.cloneNode(true) as HTMLElement;
+    
+    // Remove ID from clone to avoid duplicates
+    clone.removeAttribute('id');
+    
+    // 3. Create a container to hold the clone off-screen
+    // This ensures html2canvas only sees the invoice on a white background
+    const container = document.createElement('div');
+    container.style.position = 'fixed';
+    container.style.top = '-10000px';
+    container.style.left = '0';
+    container.style.zIndex = '-1';
+    container.style.width = '210mm'; // Force A4 width
+    container.appendChild(clone);
+    document.body.appendChild(container);
+
     const isMobile = window.innerWidth < 768;
 
     const opt = {
-      margin:       [5, 5, 5, 5], 
+      margin:       0, 
       filename:     `${selectedInvoice.invoiceNumber}.pdf`,
       image:        { type: 'jpeg', quality: 0.98 },
       html2canvas:  { 
-        scale: isMobile ? 1 : 2, 
+        scale: isMobile ? 1.5 : 2, 
         useCORS: true, 
-        scrollY: 0,
-        windowWidth: 794 
+        logging: false,
+        scrollY: 0 
       },
       jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
     };
 
-    // Use html2pdf chain
+    // Use html2pdf
     if (typeof html2pdf !== 'undefined') {
-        html2pdf().set(opt).from(element).save().catch((err: any) => {
-          console.error("PDF Download failed", err);
-          alert("Download failed. Please check your browser settings or try on a desktop.");
-        });
+        html2pdf()
+          .set(opt)
+          .from(clone)
+          .save()
+          .then(() => {
+            document.body.removeChild(container);
+          })
+          .catch((err: any) => {
+            console.error("PDF Download failed", err);
+            alert("Download failed. Please try again.");
+            if (document.body.contains(container)) {
+              document.body.removeChild(container);
+            }
+          });
     } else {
         alert("PDF generator library not loaded. Please refresh the page.");
+        document.body.removeChild(container);
     }
   };
 
