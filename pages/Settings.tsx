@@ -1,8 +1,11 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useInventory } from '../context/InventoryContext';
 import { UserRole } from '../types';
-import { Users, Shield, Calendar, Settings as SettingsIcon, Database, AlertTriangle, Check, Copy, Building, Save, Download, FileText } from 'lucide-react';
+import { Users, Shield, Calendar, Settings as SettingsIcon, Database, AlertTriangle, Check, Copy, Building, Save, Download, FileText, Printer } from 'lucide-react';
+
+// Declare html2pdf for TypeScript
+declare var html2pdf: any;
 
 export const Settings = () => {
   const { users, currentUser, updateUserRole, expiryThreshold, setExpiryThreshold, dbHealth, companyInfo, updateCompanyInfo, products, suppliers, invoices } = useInventory();
@@ -11,6 +14,7 @@ export const Settings = () => {
   // Company Info State
   const [formData, setFormData] = useState(companyInfo);
   const [isSaving, setIsSaving] = useState(false);
+  const reportRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setFormData(companyInfo);
@@ -32,7 +36,7 @@ export const Settings = () => {
     alert("Company details and settings updated successfully!");
   };
 
-  const handleExportData = () => {
+  const handleExportJSON = () => {
     const data = {
       exportedAt: new Date().toISOString(),
       company: companyInfo,
@@ -48,6 +52,25 @@ export const Settings = () => {
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
+  };
+
+  const handleDownloadReportPDF = () => {
+    const element = reportRef.current;
+    if (!element) return;
+
+    const opt = {
+      margin:       0, 
+      filename:     `UKChem_System_Report_${new Date().toISOString().split('T')[0]}.pdf`,
+      image:        { type: 'jpeg', quality: 0.98 },
+      html2canvas:  { scale: 2, useCORS: true, logging: false },
+      jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+    };
+
+    if (typeof html2pdf !== 'undefined') {
+        html2pdf().set(opt).from(element).save();
+    } else {
+        alert("PDF generator library not loaded. Please refresh the page.");
+    }
   };
 
   const INVOICE_SQL = `
@@ -229,14 +252,22 @@ GRANT ALL ON public.invoices TO anon, authenticated, service_role;
                 <h4 className="font-medium text-slate-700 mb-3 flex items-center gap-2">
                   <Database size={16} /> Data Management
                 </h4>
-                <button 
-                  onClick={handleExportData}
-                  className="w-full py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 flex items-center justify-center gap-2 transition"
-                >
-                  <Download size={16} /> Export All Data (Backup)
-                </button>
+                <div className="space-y-3">
+                  <button 
+                    onClick={handleDownloadReportPDF}
+                    className="w-full py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-900 flex items-center justify-center gap-2 transition shadow-md"
+                  >
+                    <Printer size={16} /> Download Full Report (PDF)
+                  </button>
+                  <button 
+                    onClick={handleExportJSON}
+                    className="w-full py-2 border border-slate-300 text-slate-600 rounded-lg hover:bg-slate-50 flex items-center justify-center gap-2 transition"
+                  >
+                    <Download size={16} /> Export Backup (JSON)
+                  </button>
+                </div>
                 <p className="text-xs text-slate-400 mt-2 text-center">
-                  Downloads a JSON file containing all products, suppliers, and invoices.
+                  Generate a PDF report using the invoice template, or download a JSON backup.
                 </p>
               </div>
             </div>
@@ -293,8 +324,124 @@ GRANT ALL ON public.invoices TO anon, authenticated, service_role;
             </div>
           </div>
         </div>
-
       </div>
+
+      {/* HIDDEN REPORT TEMPLATE (Used for PDF Generation) */}
+      <div style={{ position: 'fixed', top: '-10000px', left: 0, width: '210mm' }}>
+        <div ref={reportRef} className="bg-white p-12 text-slate-800" style={{ minHeight: '297mm' }}>
+          {/* Header */}
+          <div className="flex justify-between items-start border-b-4 border-brand-600 pb-6 mb-8">
+            <div className="flex flex-col">
+               <div className="flex items-center gap-3 mb-2">
+                  <div className="w-12 h-12 bg-brand-600 text-white rounded-lg flex items-center justify-center">
+                    <span className="font-bold text-2xl">UK</span>
+                  </div>
+                  <h1 className="text-3xl font-bold text-slate-800 tracking-tight">{companyInfo.name}</h1>
+               </div>
+               <div className="text-sm text-slate-500 space-y-0.5">
+                 <p>{companyInfo.address}</p>
+                 <p>{companyInfo.phone} | {companyInfo.email}</p>
+                 <p>TIN: {companyInfo.tin}</p>
+               </div>
+            </div>
+            <div className="text-right">
+              <h2 className="text-3xl font-light text-slate-400 uppercase tracking-widest">System Report</h2>
+              <p className="text-sm font-bold text-slate-800 mt-2">{new Date().toLocaleDateString()}</p>
+            </div>
+          </div>
+
+          {/* Section 1: Stock Overview */}
+          <div className="mb-8">
+            <h3 className="text-lg font-bold text-brand-700 uppercase mb-2 border-b border-slate-200 pb-1">1. Product Inventory</h3>
+            <table className="w-full text-xs text-left">
+              <thead className="bg-slate-800 text-white">
+                <tr>
+                  <th className="p-2">Product Name</th>
+                  <th className="p-2">Category</th>
+                  <th className="p-2 text-center">Warehouse</th>
+                  <th className="p-2 text-center">Office</th>
+                  <th className="p-2 text-right">Total Value</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                {products.map((p, i) => (
+                  <tr key={i} className="odd:bg-white even:bg-slate-50">
+                    <td className="p-2 font-medium">{p.name}</td>
+                    <td className="p-2 text-slate-500">{p.category}</td>
+                    <td className="p-2 text-center">{p.qtyWarehouse}</td>
+                    <td className="p-2 text-center">{p.qtyOffice}</td>
+                    <td className="p-2 text-right font-bold">
+                      {((p.qtyWarehouse + p.qtyOffice) * p.price).toLocaleString('en-GH', { style: 'currency', currency: 'GHS' })}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Section 2: Suppliers */}
+          <div className="mb-8">
+            <h3 className="text-lg font-bold text-brand-700 uppercase mb-2 border-b border-slate-200 pb-1">2. Suppliers</h3>
+            <table className="w-full text-xs text-left">
+              <thead className="bg-slate-800 text-white">
+                <tr>
+                  <th className="p-2">Company</th>
+                  <th className="p-2">Contact Person</th>
+                  <th className="p-2">Email</th>
+                  <th className="p-2">Phone</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                {suppliers.map((s, i) => (
+                  <tr key={i} className="odd:bg-white even:bg-slate-50">
+                    <td className="p-2 font-medium">{s.companyName}</td>
+                    <td className="p-2">{s.contactName}</td>
+                    <td className="p-2 text-slate-500">{s.email}</td>
+                    <td className="p-2">{s.phone}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Section 3: Invoices Summary */}
+          <div className="mb-8">
+            <h3 className="text-lg font-bold text-brand-700 uppercase mb-2 border-b border-slate-200 pb-1">3. Recent Invoices</h3>
+            <table className="w-full text-xs text-left">
+              <thead className="bg-slate-800 text-white">
+                <tr>
+                  <th className="p-2">Invoice No</th>
+                  <th className="p-2">Date</th>
+                  <th className="p-2">Customer</th>
+                  <th className="p-2 text-right">Amount</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                {invoices.slice(0, 15).map((inv, i) => (
+                  <tr key={i} className="odd:bg-white even:bg-slate-50">
+                    <td className="p-2 font-medium">{inv.invoiceNumber}</td>
+                    <td className="p-2">{new Date(inv.date).toLocaleDateString()}</td>
+                    <td className="p-2">{inv.customerName}</td>
+                    <td className="p-2 text-right font-bold">
+                      {inv.totalAmount.toLocaleString('en-GH', { style: 'currency', currency: 'GHS' })}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {invoices.length > 15 && (
+              <p className="text-xs text-center text-slate-400 mt-2">...and {invoices.length - 15} more invoices not shown.</p>
+            )}
+          </div>
+
+          {/* Footer */}
+          <div className="mt-auto pt-8 border-t border-slate-200 text-center text-xs text-slate-400">
+             <p>Generated by UK Chemicals Inventory System</p>
+             <p>{new Date().toLocaleString()}</p>
+          </div>
+        </div>
+      </div>
+
     </div>
   );
 };
