@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from 'react';
 import { Product, LogEntry, User, Notification, Location, UserRole, Supplier, Invoice, CompanyInfo } from '../types';
 import { supabase } from '../lib/supabase';
@@ -203,19 +202,41 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
 
   const fetchAllData = async () => {
     try {
-      // Use Promise.allSettled-like behavior by catching individual errors
+      // Independent fetches to prevent one failure (like network issue) from crashing the whole app
+      const productsPromise = supabase.from('products').select('*')
+        .then(res => ({ ...res, type: 'products' }))
+        .catch(err => ({ data: null, error: err, type: 'products' }));
+
+      const suppliersPromise = supabase.from('suppliers').select('*')
+        .then(res => ({ ...res, type: 'suppliers' }))
+        .catch(err => ({ data: null, error: err, type: 'suppliers' }));
+
+      const logsPromise = supabase.from('logs').select('*').order('created_at', { ascending: false }).limit(50)
+        .then(res => ({ ...res, type: 'logs' }))
+        .catch(err => ({ data: null, error: err, type: 'logs' }));
+
+      const usersPromise = supabase.from('profiles').select('*')
+        .then(res => ({ ...res, type: 'users' }))
+        .catch(err => ({ data: null, error: err, type: 'users' }));
+
+      const settingsPromise = supabase.from('app_settings').select('*').eq('key', 'expiry_threshold').single()
+        .then(res => ({ ...res, type: 'settings' }))
+        .catch(err => ({ data: null, error: err, type: 'settings' }));
+
+      const invoicesPromise = supabase.from('invoices').select('*').order('created_at', { ascending: false })
+        .then(res => ({ ...res, type: 'invoices' }))
+        .catch(err => ({ data: null, error: err, type: 'invoices' }));
+
+      const companyPromise = supabase.from('app_settings').select('*').eq('key', 'company_info').single()
+        .then(res => ({ ...res, type: 'company' }))
+        .catch(err => ({ data: null, error: err, type: 'company' }));
+
       const [productsRes, suppliersRes, logsRes, usersRes, settingsRes, invoicesRes, companyRes] = await Promise.all([
-        supabase.from('products').select('*'),
-        supabase.from('suppliers').select('*'),
-        supabase.from('logs').select('*').order('created_at', { ascending: false }).limit(50),
-        supabase.from('profiles').select('*'),
-        supabase.from('app_settings').select('*').eq('key', 'expiry_threshold').single(),
-        supabase.from('invoices').select('*').order('created_at', { ascending: false }),
-        supabase.from('app_settings').select('*').eq('key', 'company_info').single()
+        productsPromise, suppliersPromise, logsPromise, usersPromise, settingsPromise, invoicesPromise, companyPromise
       ]);
 
       if (productsRes.data) {
-        const formattedProducts = productsRes.data.map(p => ({
+        const formattedProducts = productsRes.data.map((p: any) => ({
           id: p.id,
           name: p.name,
           category: p.category,
@@ -238,7 +259,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       }
 
       if (suppliersRes.data) {
-        setSuppliers(suppliersRes.data.map(s => ({
+        setSuppliers(suppliersRes.data.map((s: any) => ({
           id: s.id,
           companyName: s.company_name,
           contactName: s.contact_name,
@@ -247,9 +268,8 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
         })));
       }
 
-      // --- STRICT INVOICE LOADING (SUPABASE ONLY) ---
       if (invoicesRes.data) {
-        const fetchedInvoices = invoicesRes.data.map(i => ({
+        const fetchedInvoices = invoicesRes.data.map((i: any) => ({
           id: i.id,
           invoiceNumber: i.invoice_number,
           customerName: i.customer_name,
@@ -259,8 +279,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
           items: Array.isArray(i.items) ? i.items : [], 
           totalAmount: Number(i.total_amount)
         }));
-        // Sort by date desc
-        fetchedInvoices.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        fetchedInvoices.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
         setInvoices(fetchedInvoices);
         setDbHealth(prev => ({ ...prev, invoices: true }));
       } else if (invoicesRes.error) {
@@ -273,7 +292,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       }
 
       if (logsRes.data) {
-        setLogs(logsRes.data.map(l => ({
+        setLogs(logsRes.data.map((l: any) => ({
           id: l.id,
           date: l.created_at,
           action: l.action,
@@ -284,7 +303,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       }
 
       if (usersRes.data) {
-        setUsers(usersRes.data.map(u => ({
+        setUsers(usersRes.data.map((u: any) => ({
           id: u.id,
           name: u.full_name,
           email: u.email,
