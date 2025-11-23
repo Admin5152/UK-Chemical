@@ -202,34 +202,69 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
 
   const fetchAllData = async () => {
     try {
-      // Independent fetches to prevent one failure (like network issue) from crashing the whole app
-      const productsPromise = supabase.from('products').select('*')
-        .then(res => ({ ...res, type: 'products' }))
-        .catch(err => ({ data: null, error: err, type: 'products' }));
+      // Independent fetches using async wrappers to prevent PromiseLike type errors
+      const productsPromise = (async () => {
+        try {
+          const res = await supabase.from('products').select('*');
+          return { ...res, type: 'products' };
+        } catch (err) {
+          return { data: null, error: err, type: 'products' };
+        }
+      })();
 
-      const suppliersPromise = supabase.from('suppliers').select('*')
-        .then(res => ({ ...res, type: 'suppliers' }))
-        .catch(err => ({ data: null, error: err, type: 'suppliers' }));
+      const suppliersPromise = (async () => {
+        try {
+          const res = await supabase.from('suppliers').select('*');
+          return { ...res, type: 'suppliers' };
+        } catch (err) {
+          return { data: null, error: err, type: 'suppliers' };
+        }
+      })();
 
-      const logsPromise = supabase.from('logs').select('*').order('created_at', { ascending: false }).limit(50)
-        .then(res => ({ ...res, type: 'logs' }))
-        .catch(err => ({ data: null, error: err, type: 'logs' }));
+      const logsPromise = (async () => {
+        try {
+          const res = await supabase.from('logs').select('*').order('created_at', { ascending: false }).limit(50);
+          return { ...res, type: 'logs' };
+        } catch (err) {
+          return { data: null, error: err, type: 'logs' };
+        }
+      })();
 
-      const usersPromise = supabase.from('profiles').select('*')
-        .then(res => ({ ...res, type: 'users' }))
-        .catch(err => ({ data: null, error: err, type: 'users' }));
+      const usersPromise = (async () => {
+        try {
+          const res = await supabase.from('profiles').select('*');
+          return { ...res, type: 'users' };
+        } catch (err) {
+          return { data: null, error: err, type: 'users' };
+        }
+      })();
 
-      const settingsPromise = supabase.from('app_settings').select('*').eq('key', 'expiry_threshold').single()
-        .then(res => ({ ...res, type: 'settings' }))
-        .catch(err => ({ data: null, error: err, type: 'settings' }));
+      const settingsPromise = (async () => {
+        try {
+          const res = await supabase.from('app_settings').select('*').eq('key', 'expiry_threshold').single();
+          return { ...res, type: 'settings' };
+        } catch (err) {
+          return { data: null, error: err, type: 'settings' };
+        }
+      })();
 
-      const invoicesPromise = supabase.from('invoices').select('*').order('created_at', { ascending: false })
-        .then(res => ({ ...res, type: 'invoices' }))
-        .catch(err => ({ data: null, error: err, type: 'invoices' }));
+      const invoicesPromise = (async () => {
+        try {
+          const res = await supabase.from('invoices').select('*').order('created_at', { ascending: false });
+          return { ...res, type: 'invoices' };
+        } catch (err) {
+          return { data: null, error: err, type: 'invoices' };
+        }
+      })();
 
-      const companyPromise = supabase.from('app_settings').select('*').eq('key', 'company_info').single()
-        .then(res => ({ ...res, type: 'company' }))
-        .catch(err => ({ data: null, error: err, type: 'company' }));
+      const companyPromise = (async () => {
+        try {
+          const res = await supabase.from('app_settings').select('*').eq('key', 'company_info').single();
+          return { ...res, type: 'company' };
+        } catch (err) {
+          return { data: null, error: err, type: 'company' };
+        }
+      })();
 
       const [productsRes, suppliersRes, logsRes, usersRes, settingsRes, invoicesRes, companyRes] = await Promise.all([
         productsPromise, suppliersPromise, logsPromise, usersPromise, settingsPromise, invoicesPromise, companyPromise
