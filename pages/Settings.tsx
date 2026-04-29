@@ -204,7 +204,7 @@ GRANT ALL ON public.invoices TO anon, authenticated, service_role;
                         }`}
                       >
                         <option value="MANAGER">Manager</option>
-                        <option value="STAFF">Staff</option>
+                        <option value="EMPLOYEE">Employee</option>
                       </select>
                     </div>
                   </div>

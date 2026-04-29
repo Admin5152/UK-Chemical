@@ -158,7 +158,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
           id: userId,
           email: email,
           full_name: 'Staff Member',
-          role: isSuperAdmin ? 'MANAGER' : 'STAFF'
+          role: isSuperAdmin ? 'MANAGER' : 'EMPLOYEE'
         };
         // Try to create profile
         try {
@@ -418,10 +418,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
   };
 
   const addProduct = async (product: Product): Promise<boolean> => {
-    if (currentUser?.role !== 'MANAGER') {
-      alert("Only Managers can add products.");
-      return false;
-    }
+    if (!currentUser) return false;
     
     const dbProduct = {
       name: product.name,
@@ -512,10 +509,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
   // --- STRICT INVOICE ACTIONS (No Local Fallback) ---
 
   const addInvoice = async (invoiceData: Omit<Invoice, 'id'>): Promise<boolean> => {
-    if (currentUser?.role !== 'MANAGER') {
-      alert("Only Managers can create invoices.");
-      return false;
-    }
+    if (!currentUser) return false;
 
     // Safe User ID check (Validation for UUID format)
     // If user ID is not a valid UUID (e.g. legacy/local user), send NULL to avoid db crash
@@ -608,6 +602,10 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
   };
 
   const adjustStock = async (productId: string, location: Location, delta: number, reason: string) => {
+    if (currentUser?.role !== 'MANAGER') {
+      alert("⛔ Access Denied: Only managers can reorder or adjust stock.");
+      return;
+    }
     const product = products.find(p => p.id === productId);
     if (!product) return;
 
@@ -629,6 +627,10 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
   };
 
   const transferStock = async (productId: string, from: Location, to: Location, amount: number) => {
+    if (currentUser?.role !== 'MANAGER') {
+      alert("⛔ Access Denied: Only managers can transfer stock.");
+      return;
+    }
     const product = products.find(p => p.id === productId);
     if (!product) return;
 

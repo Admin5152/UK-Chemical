@@ -535,7 +535,7 @@ export const Invoices = () => {
           <h2 className="text-2xl font-bold text-slate-800">Invoices</h2>
           <p className="text-slate-500">Generate and view customer invoices.</p>
         </div>
-        {currentUser?.role === 'MANAGER' && (
+        {currentUser && (
           <button 
             onClick={() => { resetForm(); setViewState('CREATE'); }}
             className="bg-brand-600 text-white px-4 py-2 rounded-lg hover:bg-brand-700 transition shadow flex items-center gap-2"
@@ -574,16 +574,34 @@ export const Invoices = () => {
                     <button onClick={() => handleView(inv)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-md" title="View/Download">
                       <Eye size={18} />
                     </button>
-                    {currentUser?.role === 'MANAGER' && (
-                      <>
-                        <button onClick={() => handleEdit(inv)} className="p-2 text-slate-600 hover:bg-slate-100 rounded-md" title="Edit">
-                          <Edit size={18} />
-                        </button>
-                        <button onClick={() => handleDelete(inv.id)} className="p-2 text-red-600 hover:bg-red-50 rounded-md" title="Delete">
-                          <Trash2 size={18} />
-                        </button>
-                      </>
-                    )}
+                    
+                    <button 
+                      onClick={() => {
+                        if (currentUser?.role === 'MANAGER') {
+                          handleEdit(inv);
+                        } else {
+                          alert("⛔ Access Denied: Only managers can edit or delete records. Please contact your manager.");
+                        }
+                      }} 
+                      className={`p-2 rounded-md transition ${currentUser?.role === 'MANAGER' ? 'text-slate-600 hover:bg-slate-100' : 'text-slate-200 cursor-not-allowed'}`}
+                      title={currentUser?.role === 'MANAGER' ? "Edit" : "Manager permission required to perform this action."}
+                    >
+                      <Edit size={18} />
+                    </button>
+                    
+                    <button 
+                      onClick={() => {
+                        if (currentUser?.role === 'MANAGER') {
+                          handleDelete(inv.id);
+                        } else {
+                          alert("⛔ Access Denied: Only managers can edit or delete records. Please contact your manager.");
+                        }
+                      }} 
+                      className={`p-2 rounded-md transition ${currentUser?.role === 'MANAGER' ? 'text-red-600 hover:bg-red-50' : 'text-slate-200 cursor-not-allowed'}`}
+                      title={currentUser?.role === 'MANAGER' ? "Delete" : "Manager permission required to perform this action."}
+                    >
+                      <Trash2 size={18} />
+                    </button>
                   </td>
                 </tr>
               ))

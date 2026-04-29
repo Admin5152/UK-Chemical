@@ -42,7 +42,7 @@ export const Suppliers = () => {
           <p className="text-slate-500">Manage vendor contact details and company information.</p>
         </div>
         
-        {currentUser?.role === 'MANAGER' && (
+        {currentUser && (
           <button 
             onClick={openAddModal}
             className="bg-brand-600 text-white px-4 py-2 rounded-lg hover:bg-brand-700 transition shadow flex items-center gap-2"
@@ -83,16 +83,34 @@ export const Suppliers = () => {
                      </p>
                    </div>
                 </div>
-                {currentUser?.role === 'MANAGER' && (
-                  <div className="flex gap-2">
-                    <button onClick={() => handleEdit(supplier)} className="p-2 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-md transition shadow-sm" title="Edit Supplier">
-                      <Edit size={16} />
-                    </button>
-                    <button onClick={() => handleDelete(supplier.id)} className="p-2 bg-red-50 text-red-600 hover:bg-red-100 rounded-md transition shadow-sm" title="Delete Supplier">
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
-                )}
+                <div className="flex gap-2">
+                  <button 
+                    onClick={() => {
+                      if (currentUser?.role === 'MANAGER') {
+                        handleEdit(supplier);
+                      } else {
+                        alert("⛔ Access Denied: Only managers can edit or delete records. Please contact your manager.");
+                      }
+                    }} 
+                    className={`p-2 rounded-md transition shadow-sm ${currentUser?.role === 'MANAGER' ? 'bg-blue-50 text-blue-600 hover:bg-blue-100' : 'bg-slate-50 text-slate-200 cursor-not-allowed'}`}
+                    title={currentUser?.role === 'MANAGER' ? "Edit Supplier" : "Manager permission required to perform this action."}
+                  >
+                    <Edit size={16} />
+                  </button>
+                  <button 
+                    onClick={() => {
+                      if (currentUser?.role === 'MANAGER') {
+                        handleDelete(supplier.id);
+                      } else {
+                        alert("⛔ Access Denied: Only managers can edit or delete records. Please contact your manager.");
+                      }
+                    }} 
+                    className={`p-2 rounded-md transition shadow-sm ${currentUser?.role === 'MANAGER' ? 'bg-red-50 text-red-600 hover:bg-red-100' : 'bg-slate-50 text-slate-200 cursor-not-allowed'}`}
+                    title={currentUser?.role === 'MANAGER' ? "Delete Supplier" : "Manager permission required to perform this action."}
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
               </div>
               
               <div className="space-y-3">
@@ -132,13 +150,14 @@ export const Suppliers = () => {
           onClose={() => setIsModalOpen(false)} 
           existingSupplier={editingSupplier}
           onSubmit={editingSupplier ? updateSupplier : addSupplier}
+          isReadOnly={currentUser?.role !== 'MANAGER' && !!editingSupplier}
         />
       )}
     </div>
   );
 };
 
-const SupplierModal = ({ isOpen, onClose, existingSupplier, onSubmit }: any) => {
+const SupplierModal = ({ isOpen, onClose, existingSupplier, onSubmit, isReadOnly }: any) => {
   if (!isOpen) return null;
 
   const [formData, setFormData] = useState<Partial<Supplier>>(existingSupplier || {
@@ -147,6 +166,10 @@ const SupplierModal = ({ isOpen, onClose, existingSupplier, onSubmit }: any) => 
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (isReadOnly) {
+       alert("⛔ Access Denied: Only managers can edit records.");
+       return;
+    }
     const supplier = {
       ...formData,
       id: existingSupplier?.id || Math.random().toString(36).substr(2, 9),
@@ -159,15 +182,20 @@ const SupplierModal = ({ isOpen, onClose, existingSupplier, onSubmit }: any) => 
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
       <div className="bg-white rounded-xl w-full max-w-md shadow-2xl transform transition-all">
         <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-white rounded-t-xl">
-          <h3 className="text-xl font-bold text-slate-800">{existingSupplier ? 'Edit Supplier' : 'Add New Supplier'}</h3>
+          <h3 className="text-xl font-bold text-slate-800">{existingSupplier ? (isReadOnly ? 'View Supplier' : 'Edit Supplier') : 'Add New Supplier'}</h3>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition">✕</button>
         </div>
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          {isReadOnly && (
+             <div className="bg-amber-50 border border-amber-200 text-amber-800 p-3 rounded-lg text-sm mb-4">
+                Manager permission required to edit existing records.
+             </div>
+          )}
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Company Name</label>
             <div className="relative">
               <Building className="absolute left-3 top-2.5 text-slate-400" size={16} />
-              <input required type="text" className="w-full pl-9 p-2 border border-slate-300 bg-white text-slate-900 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none" 
+              <input disabled={isReadOnly} required type="text" className={`w-full pl-9 p-2 border border-slate-300 bg-white text-slate-900 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none ${isReadOnly ? 'bg-slate-50 text-slate-500' : ''}`}
                 value={formData.companyName} onChange={e => setFormData({...formData, companyName: e.target.value})} placeholder="e.g. BASF Chemical" />
             </div>
           </div>
@@ -175,7 +203,7 @@ const SupplierModal = ({ isOpen, onClose, existingSupplier, onSubmit }: any) => 
             <label className="block text-sm font-medium text-slate-700 mb-1">Contact Person Name</label>
             <div className="relative">
               <User className="absolute left-3 top-2.5 text-slate-400" size={16} />
-              <input required type="text" className="w-full pl-9 p-2 border border-slate-300 bg-white text-slate-900 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none" 
+              <input disabled={isReadOnly} required type="text" className={`w-full pl-9 p-2 border border-slate-300 bg-white text-slate-900 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none ${isReadOnly ? 'bg-slate-50 text-slate-500' : ''}`}
                 value={formData.contactName} onChange={e => setFormData({...formData, contactName: e.target.value})} placeholder="e.g. John Doe" />
             </div>
           </div>
@@ -183,7 +211,7 @@ const SupplierModal = ({ isOpen, onClose, existingSupplier, onSubmit }: any) => 
             <label className="block text-sm font-medium text-slate-700 mb-1">Email Address</label>
             <div className="relative">
                <Mail className="absolute left-3 top-2.5 text-slate-400" size={16} />
-               <input required type="email" className="w-full pl-9 p-2 border border-slate-300 bg-white text-slate-900 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none" 
+               <input disabled={isReadOnly} required type="email" className={`w-full pl-9 p-2 border border-slate-300 bg-white text-slate-900 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none ${isReadOnly ? 'bg-slate-50 text-slate-500' : ''}`}
                 value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} placeholder="john@company.com" />
             </div>
           </div>
@@ -191,16 +219,18 @@ const SupplierModal = ({ isOpen, onClose, existingSupplier, onSubmit }: any) => 
             <label className="block text-sm font-medium text-slate-700 mb-1">Phone Number</label>
             <div className="relative">
                <Phone className="absolute left-3 top-2.5 text-slate-400" size={16} />
-               <input required type="tel" className="w-full pl-9 p-2 border border-slate-300 bg-white text-slate-900 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none" 
+               <input disabled={isReadOnly} required type="tel" className={`w-full pl-9 p-2 border border-slate-300 bg-white text-slate-900 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none ${isReadOnly ? 'bg-slate-50 text-slate-500' : ''}`}
                 value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} placeholder="+1 234 567 890" />
             </div>
           </div>
           
           <div className="flex justify-end gap-3 pt-4">
             <button type="button" onClick={onClose} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg transition">Cancel</button>
-            <button type="submit" className="px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 shadow-lg shadow-brand-600/30 transition">
-              {existingSupplier ? 'Update Details' : 'Save Supplier'}
-            </button>
+            {!isReadOnly && (
+              <button type="submit" className="px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 shadow-lg shadow-brand-600/30 transition">
+                {existingSupplier ? 'Update Details' : 'Save Supplier'}
+              </button>
+            )}
           </div>
         </form>
       </div>

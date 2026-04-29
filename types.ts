@@ -1,5 +1,5 @@
 
-export type UserRole = 'MANAGER' | 'STAFF';
+export type UserRole = 'MANAGER' | 'EMPLOYEE';
 
 export type Location = 'Warehouse' | 'Main Office';
 
