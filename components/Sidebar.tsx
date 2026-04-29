@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, Package, FileBarChart, Settings, LogOut, Truck, X, FileText } from 'lucide-react';
+import { LayoutDashboard, Package, FileBarChart, Settings, LogOut, Truck, X, FileText, CheckCircle2 } from 'lucide-react';
 import { useInventory } from '../context/InventoryContext';
 
 interface SidebarProps {
@@ -21,6 +21,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView, i
   ];
 
   if (currentUser?.role === 'MANAGER') {
+    menuItems.push({ id: 'approvals', label: 'Approvals', icon: CheckCircle2 });
     menuItems.push({ id: 'settings', label: 'Settings', icon: Settings });
   }
 

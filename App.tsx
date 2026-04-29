@@ -7,6 +7,7 @@ import { Reports } from './pages/Reports';
 import { Settings } from './pages/Settings';
 import { Suppliers } from './pages/Suppliers';
 import { Invoices } from './pages/Invoices';
+import { Approvals } from './pages/Approvals';
 import { Login } from './components/Login';
 import { SplashScreen } from './components/SplashScreen';
 import { Bell, Loader2, Menu } from 'lucide-react';
@@ -38,8 +39,8 @@ const MainApp = ({ splashFinished }: { splashFinished: boolean }) => {
   const unreadCount = notifications.filter(n => !n.isRead).length;
 
   const renderView = () => {
-    // SECURITY GUARD: Prevent non-managers from accessing Settings
-    if (currentView === 'settings' && currentUser.role !== 'MANAGER') {
+    // SECURITY GUARD: Prevent non-managers from accessing Settings or Approvals
+    if ((currentView === 'settings' || currentView === 'approvals') && currentUser.role !== 'MANAGER') {
       return <Dashboard setView={setCurrentView} />;
     }
 
@@ -50,6 +51,7 @@ const MainApp = ({ splashFinished }: { splashFinished: boolean }) => {
       case 'settings': return <Settings />;
       case 'suppliers': return <Suppliers />;
       case 'invoices': return <Invoices />;
+      case 'approvals': return <Approvals />;
       default: return <Dashboard setView={setCurrentView} />;
     }
   };

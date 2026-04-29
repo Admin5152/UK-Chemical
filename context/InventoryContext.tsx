@@ -10,6 +10,7 @@ interface InventoryContextType {
   invoices: Invoice[];
   logs: LogEntry[];
   notifications: Notification[];
+  approvalRequests: ApprovalRequest[];
   expiryThreshold: number;
   companyInfo: CompanyInfo;
   login: (email: string, pass: string) => Promise<void>;
@@ -27,6 +28,9 @@ interface InventoryContextType {
   addInvoice: (invoice: Omit<Invoice, 'id'>) => Promise<boolean>;
   updateInvoice: (invoice: Invoice) => Promise<boolean>;
   deleteInvoice: (id: string) => Promise<boolean>;
+  createApprovalRequest: (actionType: 'edit' | 'delete', productId: string, productName: string) => Promise<boolean>;
+  resolveApprovalRequest: (requestId: string, status: 'approved' | 'denied') => Promise<void>;
+  isActionUnlocked: (actionType: 'edit' | 'delete', productId: string) => boolean;
   adjustStock: (productId: string, location: Location, delta: number, reason: string) => Promise<void>;
   transferStock: (productId: string, from: Location, to: Location, amount: number) => Promise<void>;
   markNotificationRead: (id: string) => void;
@@ -43,6 +47,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
   const [products, setProducts] = useState<Product[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [approvalRequests, setApprovalRequests] = useState<ApprovalRequest[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [expiryThreshold, setExpiryThresholdState] = useState<number>(30);
@@ -266,8 +271,17 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
         }
       })();
 
-      const [productsRes, suppliersRes, logsRes, usersRes, settingsRes, invoicesRes, companyRes] = await Promise.all([
-        productsPromise, suppliersPromise, logsPromise, usersPromise, settingsPromise, invoicesPromise, companyPromise
+      const approvalsPromise = (async () => {
+        try {
+          const res = await supabase.from('approval_requests').select('*').order('created_at', { ascending: false });
+          return { ...res, type: 'approvals' };
+        } catch (err) {
+          return { data: null, error: err, type: 'approvals' };
+        }
+      })();
+
+      const [productsRes, suppliersRes, logsRes, usersRes, settingsRes, invoicesRes, companyRes, approvalsRes] = await Promise.all([
+        productsPromise, suppliersPromise, logsPromise, usersPromise, settingsPromise, invoicesPromise, companyPromise, approvalsPromise
       ]);
 
       if (productsRes.data) {
@@ -354,8 +368,14 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
         setCompanyInfo(prev => ({ ...prev, ...companyRes.data.value }));
       }
 
-    } catch (error: any) {
-      console.error("Error fetching data:", error.message || error);
+      if (approvalsRes.data) {
+        setApprovalRequests(approvalsRes.data);
+      }
+
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("Error fetching data:", message);
+      setError(message);
     }
   };
 
@@ -745,6 +765,82 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
     if (error) throw error;
   };
 
+  const createApprovalRequest = async (actionType: 'edit' | 'delete', productId: string, productName: string): Promise<boolean> => {
+    if (!currentUser) return false;
+
+    const requestData = {
+      requested_by_name: currentUser.name,
+      requested_by_email: currentUser.email,
+      action_type: actionType,
+      product_id: productId,
+      product_name: productName,
+      status: 'pending'
+    };
+
+    const { data, error } = await supabase.from('approval_requests').insert(requestData).select().single();
+
+    if (error) {
+      alert("Failed to send approval request: " + error.message);
+      return false;
+    }
+
+    if (data) {
+      setApprovalRequests(prev => [data, ...prev]);
+      // Notify Backend to send email via server
+      try {
+        await fetch('/api/notify-approval', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ requestId: data.id })
+        });
+      } catch (e) { console.error("Email notification error", e); }
+      
+      return true;
+    }
+    return false;
+  };
+
+  const resolveApprovalRequest = async (requestId: string, status: 'approved' | 'denied') => {
+    if (currentUser?.role !== 'MANAGER') return;
+
+    const { error } = await supabase
+      .from('approval_requests')
+      .update({ 
+        status, 
+        resolved_at: new Date().toISOString(), 
+        resolved_by: 'Manager' 
+      })
+      .eq('id', requestId);
+
+    if (error) {
+      alert("Failed to resolve request: " + error.message);
+      return;
+    }
+
+    setApprovalRequests(prev => prev.map(r => r.id === requestId ? { 
+      ...r, 
+      status, 
+      resolved_at: new Date().toISOString(), 
+      resolved_by: 'Manager' 
+    } : r));
+  };
+
+  const isActionUnlocked = (actionType: 'edit' | 'delete', productId: string): boolean => {
+    if (!currentUser || currentUser.role === 'MANAGER') return true;
+    
+    // Find an approved request for this product and action by this user in the last 24h
+    const oneDayAgo = new Date();
+    oneDayAgo.setHours(oneDayAgo.getHours() - 24);
+
+    return approvalRequests.some(r => 
+      r.product_id === productId && 
+      r.action_type === actionType && 
+      r.requested_by_email === currentUser.email && 
+      r.status === 'approved' &&
+      new Date(r.resolved_at || 0) > oneDayAgo
+    );
+  };
+
   const logout = async () => {
     try {
       clearData();
@@ -758,11 +854,12 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
 
   return (
     <InventoryContext.Provider value={{
-      currentUser, users, products, suppliers, invoices, logs, notifications, expiryThreshold, companyInfo,
+      currentUser, users, products, suppliers, invoices, logs, notifications, approvalRequests, expiryThreshold, companyInfo,
       login, signup, logout, updateUserRole, setExpiryThreshold, updateCompanyInfo,
       addProduct, updateProduct, deleteProduct,
       addSupplier, updateSupplier, deleteSupplier,
       addInvoice, updateInvoice, deleteInvoice,
+      createApprovalRequest, resolveApprovalRequest, isActionUnlocked,
       adjustStock, transferStock, markNotificationRead,
       loading, error, clearData, dbHealth
     }}>

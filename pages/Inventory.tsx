@@ -4,11 +4,11 @@ import { Product, FilterState, Location } from '../types';
 import { CATEGORIES } from '../constants';
 import { 
   Search, Filter, Plus, AlertCircle, MoreHorizontal, ArrowRightLeft, 
-  Trash2, Edit, CheckCircle 
+  Trash2, Edit, CheckCircle, Clock 
 } from 'lucide-react';
 
 export const Inventory = () => {
-  const { products, deleteProduct, currentUser, adjustStock, transferStock, addProduct, updateProduct } = useInventory();
+  const { products, deleteProduct, currentUser, adjustStock, transferStock, addProduct, updateProduct, createApprovalRequest, isActionUnlocked } = useInventory();
   
   const [filter, setFilter] = useState<FilterState>({
     search: '',
@@ -23,6 +23,17 @@ export const Inventory = () => {
   
   const [isTransferOpen, setIsTransferOpen] = useState(false);
   const [selectedProductForAction, setSelectedProductForAction] = useState<Product | null>(null);
+
+  // Confirmation/Approval Modals
+  const [confirmModal, setConfirmModal] = useState<{ isOpen: boolean; type: 'edit' | 'delete'; product: Product | null }>({
+    isOpen: false,
+    type: 'edit',
+    product: null
+  });
+  const [approvalSentModal, setApprovalSentModal] = useState<{ isOpen: boolean; productName: string }>({
+    isOpen: false,
+    productName: ''
+  });
   
   // Filter Logic
   const filteredProducts = products.filter(p => {
@@ -57,8 +68,50 @@ export const Inventory = () => {
   // --- Modals (Simplified inline for XML constraints, ideally separate components) ---
 
   const handleEditClick = (p: Product) => {
-    setEditingProduct(p);
-    setIsProductModalOpen(true);
+    if (currentUser?.role === 'MANAGER') {
+      setConfirmModal({ isOpen: true, type: 'edit', product: p });
+    } else {
+      // Check if unlocked
+      if (isActionUnlocked('edit', p.id)) {
+        setEditingProduct(p);
+        setIsProductModalOpen(true);
+      } else {
+        // Request approval
+        createApprovalRequest('edit', p.id, p.name).then(success => {
+          if (success) setApprovalSentModal({ isOpen: true, productName: p.name });
+        });
+      }
+    }
+  };
+
+  const handleDeleteClick = (p: Product) => {
+    if (currentUser?.role === 'MANAGER') {
+      setConfirmModal({ isOpen: true, type: 'delete', product: p });
+    } else {
+      // Check if unlocked
+      if (isActionUnlocked('delete', p.id)) {
+        if (window.confirm(`Are you sure you want to delete ${p.name}?`)) {
+          deleteProduct(p.id);
+        }
+      } else {
+        // Request approval
+        createApprovalRequest('delete', p.id, p.name).then(success => {
+          if (success) setApprovalSentModal({ isOpen: true, productName: p.name });
+        });
+      }
+    }
+  };
+
+  const handleConfirmAction = () => {
+    if (!confirmModal.product) return;
+    
+    if (confirmModal.type === 'edit') {
+      setEditingProduct(confirmModal.product);
+      setIsProductModalOpen(true);
+    } else {
+      deleteProduct(confirmModal.product.id);
+    }
+    setConfirmModal({ ...confirmModal, isOpen: false });
   };
 
   const handleTransferClick = (p: Product) => {
@@ -189,28 +242,20 @@ export const Inventory = () => {
                       
                       <button 
                         onClick={() => {
-                          if (currentUser?.role === 'MANAGER') {
-                            handleEditClick(p);
-                          } else {
-                            alert("⛔ Access Denied: Only managers can edit or delete records. Please contact your manager.");
-                          }
+                          handleEditClick(p);
                         }} 
-                        className={`p-2 rounded-full transition ${currentUser?.role === 'MANAGER' ? 'text-slate-400 hover:text-blue-600 hover:bg-blue-50' : 'text-slate-200 cursor-not-allowed'}`}
-                        title={currentUser?.role === 'MANAGER' ? "Edit" : "Manager permission required to perform this action."}
+                        className={`p-2 rounded-full transition ${currentUser?.role === 'MANAGER' || isActionUnlocked('edit', p.id) ? 'text-slate-400 hover:text-blue-600 hover:bg-blue-50' : 'text-slate-300 hover:text-amber-600 hover:bg-amber-50'}`}
+                        title={currentUser?.role === 'MANAGER' ? "Edit" : (isActionUnlocked('edit', p.id) ? "Action Unlocked" : "Request Management Approval")}
                       >
                         <Edit size={16} />
                       </button>
                       
                       <button 
                         onClick={() => {
-                          if (currentUser?.role === 'MANAGER') {
-                            deleteProduct(p.id);
-                          } else {
-                            alert("⛔ Access Denied: Only managers can edit or delete records. Please contact your manager.");
-                          }
+                          handleDeleteClick(p);
                         }} 
-                        className={`p-2 rounded-full transition ${currentUser?.role === 'MANAGER' ? 'text-slate-400 hover:text-red-600 hover:bg-red-50' : 'text-slate-200 cursor-not-allowed'}`}
-                        title={currentUser?.role === 'MANAGER' ? "Delete" : "Manager permission required to perform this action."}
+                        className={`p-2 rounded-full transition ${currentUser?.role === 'MANAGER' || isActionUnlocked('delete', p.id) ? 'text-slate-400 hover:text-red-600 hover:bg-red-50' : 'text-slate-300 hover:text-amber-600 hover:bg-amber-50'}`}
+                        title={currentUser?.role === 'MANAGER' ? "Delete" : (isActionUnlocked('delete', p.id) ? "Action Unlocked" : "Request Management Approval")}
                       >
                         <Trash2 size={16} />
                       </button>
@@ -249,6 +294,58 @@ export const Inventory = () => {
           onTransfer={transferStock}
         />
       )}
+
+      {/* Confirmation Modal */}
+      {confirmModal.isOpen && (
+        <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-xl w-full max-w-md p-6 shadow-2xl">
+            <h3 className="text-xl font-bold text-slate-800 mb-2">
+              {confirmModal.type === 'edit' ? 'Confirm Edit' : 'Confirm Delete'}
+            </h3>
+            <p className="text-slate-600 mb-6">
+              {confirmModal.type === 'edit' 
+                ? `You are about to edit ${confirmModal.product?.name}. Please confirm you want to make changes.`
+                : `Are you sure you want to delete ${confirmModal.product?.name}? This action cannot be undone.`
+              }
+            </p>
+            <div className="flex justify-end gap-3">
+              <button 
+                onClick={() => setConfirmModal({ ...confirmModal, isOpen: false })}
+                className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg transition"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={handleConfirmAction}
+                className={`px-4 py-2 text-white rounded-lg transition ${confirmModal.type === 'delete' ? 'bg-red-600 hover:bg-red-700' : 'bg-brand-600 hover:bg-brand-700'}`}
+              >
+                {confirmModal.type === 'edit' ? 'Yes, Edit' : 'Yes, Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Approval Sent Modal */}
+      {approvalSentModal.isOpen && (
+        <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-xl w-full max-w-md p-8 text-center shadow-2xl">
+            <div className="w-16 h-16 bg-brand-50 text-brand-600 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Clock size={32} />
+            </div>
+            <h3 className="text-xl font-bold text-slate-800 mb-2">Request Sent</h3>
+            <p className="text-slate-600 mb-6">
+              Your manager (sethagyeimensah2@gmail.com) has been notified and must approve the <strong>{confirmModal.type || 'action'}</strong> for <strong>{approvalSentModal.productName}</strong> before it proceeds.
+            </p>
+            <button 
+              onClick={() => setApprovalSentModal({ isOpen: false, productName: '' })}
+              className="w-full px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition font-bold"
+            >
+              Understand
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -256,7 +353,10 @@ export const Inventory = () => {
 // --- Sub-Components for Inventory Page ---
 
 const ProductFormModal = ({ isOpen, onClose, existingProduct, onSubmit, isReadOnly }: any) => {
+  const { isActionUnlocked, currentUser } = useInventory();
   if (!isOpen) return null;
+
+  const effectiveReadOnly = isReadOnly && existingProduct && !isActionUnlocked('edit', existingProduct.id);
 
   const [formData, setFormData] = useState<Partial<Product>>(existingProduct || {
     name: '', category: 'Acids', unit: 'Liters', qtyWarehouse: 0, qtyOffice: 0,
@@ -266,7 +366,7 @@ const ProductFormModal = ({ isOpen, onClose, existingProduct, onSubmit, isReadOn
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (isReadOnly && existingProduct) {
+    if (effectiveReadOnly) {
        alert("⛔ Access Denied: Only managers can edit records.");
        return;
     }
@@ -291,7 +391,7 @@ const ProductFormModal = ({ isOpen, onClose, existingProduct, onSubmit, isReadOn
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600">✕</button>
         </div>
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          {isReadOnly && existingProduct && (
+          {effectiveReadOnly && (
             <div className="bg-amber-50 border border-amber-200 text-amber-800 p-3 rounded-lg text-sm mb-4">
               Manager permission required to edit existing records.
             </div>
@@ -299,59 +399,59 @@ const ProductFormModal = ({ isOpen, onClose, existingProduct, onSubmit, isReadOn
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Product Name</label>
-              <input readOnly={isReadOnly && !!existingProduct} required type="text" className={`w-full p-2 border border-slate-300 bg-white text-slate-900 rounded-md ${isReadOnly && !!existingProduct ? 'bg-slate-50 text-slate-500' : ''}`} value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
+              <input readOnly={effectiveReadOnly} required type="text" className={`w-full p-2 border border-slate-300 bg-white text-slate-900 rounded-md ${effectiveReadOnly ? 'bg-slate-50 text-slate-500' : ''}`} value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Category</label>
-              <select disabled={isReadOnly && !!existingProduct} className={`w-full p-2 border border-slate-300 bg-white text-slate-900 rounded-md ${isReadOnly && !!existingProduct ? 'bg-slate-50 text-slate-500' : ''}`} value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})}>
+              <select disabled={effectiveReadOnly} className={`w-full p-2 border border-slate-300 bg-white text-slate-900 rounded-md ${effectiveReadOnly ? 'bg-slate-50 text-slate-500' : ''}`} value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})}>
                 {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Supplier</label>
-              <input readOnly={isReadOnly && !!existingProduct} required type="text" className={`w-full p-2 border border-slate-300 bg-white text-slate-900 rounded-md ${isReadOnly && !!existingProduct ? 'bg-slate-50 text-slate-500' : ''}`} value={formData.supplier} onChange={e => setFormData({...formData, supplier: e.target.value})} />
+              <input readOnly={effectiveReadOnly} required type="text" className={`w-full p-2 border border-slate-300 bg-white text-slate-900 rounded-md ${effectiveReadOnly ? 'bg-slate-50 text-slate-500' : ''}`} value={formData.supplier} onChange={e => setFormData({...formData, supplier: e.target.value})} />
             </div>
              <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Unit (L, kg, etc)</label>
-              <input readOnly={isReadOnly && !!existingProduct} required type="text" className={`w-full p-2 border border-slate-300 bg-white text-slate-900 rounded-md ${isReadOnly && !!existingProduct ? 'bg-slate-50 text-slate-500' : ''}`} value={formData.unit} onChange={e => setFormData({...formData, unit: e.target.value})} />
+              <input readOnly={effectiveReadOnly} required type="text" className={`w-full p-2 border border-slate-300 bg-white text-slate-900 rounded-md ${effectiveReadOnly ? 'bg-slate-50 text-slate-500' : ''}`} value={formData.unit} onChange={e => setFormData({...formData, unit: e.target.value})} />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Initial Qty (Warehouse)</label>
-              <input readOnly={isReadOnly && !!existingProduct} required type="number" className={`w-full p-2 border border-slate-300 bg-white text-slate-900 rounded-md ${isReadOnly && !!existingProduct ? 'bg-slate-50 text-slate-500' : ''}`} value={formData.qtyWarehouse} onChange={e => setFormData({...formData, qtyWarehouse: Number(e.target.value)})} />
+              <input readOnly={effectiveReadOnly} required type="number" className={`w-full p-2 border border-slate-300 bg-white text-slate-900 rounded-md ${effectiveReadOnly ? 'bg-slate-50 text-slate-500' : ''}`} value={formData.qtyWarehouse} onChange={e => setFormData({...formData, qtyWarehouse: Number(e.target.value)})} />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Initial Qty (Office)</label>
-              <input readOnly={isReadOnly && !!existingProduct} required type="number" className={`w-full p-2 border border-slate-300 bg-white text-slate-900 rounded-md ${isReadOnly && !!existingProduct ? 'bg-slate-50 text-slate-500' : ''}`} value={formData.qtyOffice} onChange={e => setFormData({...formData, qtyOffice: Number(e.target.value)})} />
+              <input readOnly={effectiveReadOnly} required type="number" className={`w-full p-2 border border-slate-300 bg-white text-slate-900 rounded-md ${effectiveReadOnly ? 'bg-slate-50 text-slate-500' : ''}`} value={formData.qtyOffice} onChange={e => setFormData({...formData, qtyOffice: Number(e.target.value)})} />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1 text-orange-600">Reorder Threshold</label>
-              <input readOnly={isReadOnly && !!existingProduct} required type="number" className={`w-full p-2 border border-orange-200 bg-white text-slate-900 rounded-md focus:ring-orange-500 ${isReadOnly && !!existingProduct ? 'bg-slate-50 text-slate-500' : ''}`} value={formData.reorderLevel} onChange={e => setFormData({...formData, reorderLevel: Number(e.target.value)})} />
+              <input readOnly={effectiveReadOnly} required type="number" className={`w-full p-2 border border-orange-200 bg-white text-slate-900 rounded-md focus:ring-orange-500 ${effectiveReadOnly ? 'bg-slate-50 text-slate-500' : ''}`} value={formData.reorderLevel} onChange={e => setFormData({...formData, reorderLevel: Number(e.target.value)})} />
             </div>
             <div>
               {/* Changed currency symbol to ₵ */}
               <label className="block text-sm font-medium text-slate-700 mb-1">Price per Unit (₵)</label>
-              <input readOnly={isReadOnly && !!existingProduct} required type="number" step="0.01" className={`w-full p-2 border border-slate-300 bg-white text-slate-900 rounded-md ${isReadOnly && !!existingProduct ? 'bg-slate-50 text-slate-500' : ''}`} value={formData.price} onChange={e => setFormData({...formData, price: Number(e.target.value)})} />
+              <input readOnly={effectiveReadOnly} required type="number" step="0.01" className={`w-full p-2 border border-slate-300 bg-white text-slate-900 rounded-md ${effectiveReadOnly ? 'bg-slate-50 text-slate-500' : ''}`} value={formData.price} onChange={e => setFormData({...formData, price: Number(e.target.value)})} />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Production Date</label>
-              <input readOnly={isReadOnly && !!existingProduct} required type="date" className={`w-full p-2 border border-slate-300 bg-white text-slate-900 rounded-md ${isReadOnly && !!existingProduct ? 'bg-slate-50 text-slate-500' : ''}`} value={formData.productionDate} onChange={e => setFormData({...formData, productionDate: e.target.value})} />
+              <input readOnly={effectiveReadOnly} required type="date" className={`w-full p-2 border border-slate-300 bg-white text-slate-900 rounded-md ${effectiveReadOnly ? 'bg-slate-50 text-slate-500' : ''}`} value={formData.productionDate} onChange={e => setFormData({...formData, productionDate: e.target.value})} />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Expiration Date</label>
-              <input readOnly={isReadOnly && !!existingProduct} required type="date" className={`w-full p-2 border border-slate-300 bg-white text-slate-900 rounded-md ${isReadOnly && !!existingProduct ? 'bg-slate-50 text-slate-500' : ''}`} value={formData.expirationDate} onChange={e => setFormData({...formData, expirationDate: e.target.value})} />
+              <input readOnly={effectiveReadOnly} required type="date" className={`w-full p-2 border border-slate-300 bg-white text-slate-900 rounded-md ${effectiveReadOnly ? 'bg-slate-50 text-slate-500' : ''}`} value={formData.expirationDate} onChange={e => setFormData({...formData, expirationDate: e.target.value})} />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Origin Country</label>
-              <input readOnly={isReadOnly && !!existingProduct} type="text" className={`w-full p-2 border border-slate-300 bg-white text-slate-900 rounded-md ${isReadOnly && !!existingProduct ? 'bg-slate-50 text-slate-500' : ''}`} value={formData.origin} onChange={e => setFormData({...formData, origin: e.target.value})} />
+              <input readOnly={effectiveReadOnly} type="text" className={`w-full p-2 border border-slate-300 bg-white text-slate-900 rounded-md ${effectiveReadOnly ? 'bg-slate-50 text-slate-500' : ''}`} value={formData.origin} onChange={e => setFormData({...formData, origin: e.target.value})} />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Delivery Agent</label>
-              <input readOnly={isReadOnly && !!existingProduct} type="text" className={`w-full p-2 border border-slate-300 bg-white text-slate-900 rounded-md ${isReadOnly && !!existingProduct ? 'bg-slate-50 text-slate-500' : ''}`} value={formData.deliveryAgent} onChange={e => setFormData({...formData, deliveryAgent: e.target.value})} />
+              <input readOnly={effectiveReadOnly} type="text" className={`w-full p-2 border border-slate-300 bg-white text-slate-900 rounded-md ${effectiveReadOnly ? 'bg-slate-50 text-slate-500' : ''}`} value={formData.deliveryAgent} onChange={e => setFormData({...formData, deliveryAgent: e.target.value})} />
             </div>
           </div>
           <div className="flex justify-end gap-3 pt-4 border-t">
             <button type="button" onClick={onClose} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg">Cancel</button>
-            {(!isReadOnly || !existingProduct) && (
+            {(!effectiveReadOnly || !existingProduct) && (
               <button type="submit" className="px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700">Save Product</button>
             )}
           </div>

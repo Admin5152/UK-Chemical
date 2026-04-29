@@ -87,3 +87,16 @@ export interface FilterState {
   location: 'ALL' | Location;
   stockStatus: 'ALL' | 'LOW' | 'NORMAL' | 'EXPIRED';
 }
+
+export interface ApprovalRequest {
+  id: string;
+  requested_by_name: string;
+  requested_by_email: string;
+  action_type: 'edit' | 'delete';
+  product_id: string;
+  product_name: string;
+  status: 'pending' | 'approved' | 'denied';
+  created_at: string;
+  resolved_at?: string;
+  resolved_by?: string;
+}
