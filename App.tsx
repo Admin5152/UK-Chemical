@@ -13,10 +13,21 @@ import { SplashScreen } from './components/SplashScreen';
 import { Bell, Loader2, Menu } from 'lucide-react';
 
 const MainApp = ({ splashFinished }: { splashFinished: boolean }) => {
-  const { currentUser, notifications, markNotificationRead, loading } = useInventory();
+  const { currentUser, notifications, markNotificationRead, deleteNotification, loading } = useInventory();
   const [currentView, setCurrentView] = useState('dashboard');
   const [showNotifDropdown, setShowNotifDropdown] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+
+  // Close dropdown on click outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (showNotifDropdown && !(e.target as Element).closest('.notif-container')) {
+        setShowNotifDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showNotifDropdown]);
 
   // While Splash is showing, we render nothing here (Splash covers it)
   // Once Splash finishes, if we are still loading data, we show a spinner
@@ -93,7 +104,7 @@ const MainApp = ({ splashFinished }: { splashFinished: boolean }) => {
           </div>
 
           <div className="flex items-center gap-2 md:gap-4">
-            <div className="relative">
+            <div className="relative notif-container">
               <button 
                 onClick={() => setShowNotifDropdown(!showNotifDropdown)}
                 className="p-2 text-slate-400 hover:bg-slate-100 rounded-full relative transition"
@@ -107,31 +118,69 @@ const MainApp = ({ splashFinished }: { splashFinished: boolean }) => {
               {showNotifDropdown && (
                 <div className="absolute right-0 mt-2 w-80 bg-white rounded-xl shadow-xl border border-slate-100 overflow-hidden z-50 animate-in fade-in slide-in-from-top-2 duration-200">
                   <div className="p-3 border-b bg-slate-50 font-semibold text-sm text-slate-700 flex justify-between items-center">
-                    <span>Notifications</span>
-                    {unreadCount > 0 && <span className="text-xs bg-brand-100 text-brand-700 px-2 py-0.5 rounded-full">{unreadCount} new</span>}
+                    <div className="flex items-center gap-2">
+                      <span>Notifications</span>
+                      {unreadCount > 0 && <span className="text-[10px] bg-red-500 text-white px-1.5 py-0.5 rounded-full">{unreadCount}</span>}
+                    </div>
+                    {notifications.length > 0 && (
+                      <button 
+                        onClick={() => {
+                          notifications.forEach(n => deleteNotification(n.id));
+                        }}
+                        className="text-[10px] text-brand-600 hover:underline font-normal"
+                      >
+                        Clear All
+                      </button>
+                    )}
                   </div>
-                  <div className="max-h-64 overflow-y-auto custom-scrollbar">
+                  <div className="max-h-80 overflow-y-auto custom-scrollbar">
                     {notifications.length === 0 ? (
-                      <div className="p-6 text-center text-xs text-slate-400">
-                        <Bell className="mx-auto mb-2 opacity-20" size={24} />
-                        No notifications
+                      <div className="p-10 text-center text-xs text-slate-400 flex flex-col items-center gap-2">
+                        <div className="w-12 h-12 bg-slate-50 rounded-full flex items-center justify-center">
+                          <Bell className="opacity-20 text-slate-400" size={24} />
+                        </div>
+                        <p>No notifications yet</p>
                       </div>
                     ) : (
-                      notifications.map(n => (
+                      notifications.slice().sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map(n => (
                         <div 
                           key={n.id} 
-                          onClick={() => markNotificationRead(n.id)}
-                          className={`p-3 border-b hover:bg-slate-50 cursor-pointer transition-colors ${!n.isRead ? 'bg-blue-50/50' : ''}`}
+                          className={`group relative p-3 border-b hover:bg-slate-50 transition-colors ${!n.isRead ? 'bg-brand-50/30' : ''}`}
                         >
                           <div className="flex justify-between items-start mb-1">
-                            <span className={`text-xs font-bold ${n.type === 'DANGER' ? 'text-red-600' : n.type === 'WARNING' ? 'text-orange-600' : 'text-blue-600'}`}>{n.title}</span>
-                            <span className="text-[10px] text-slate-400">{new Date(n.date).toLocaleDateString()}</span>
+                            <span className={`text-[10px] font-bold uppercase tracking-wider ${
+                              n.type === 'DANGER' ? 'text-red-500' : 
+                              n.type === 'WARNING' ? 'text-orange-500' : 
+                              'text-brand-600'
+                            }`}>{n.title}</span>
+                            <div className="flex items-center gap-2">
+                               <span className="text-[9px] text-slate-400">{new Date(n.date).toLocaleDateString()}</span>
+                               <button 
+                                 onClick={(e) => {
+                                   e.stopPropagation();
+                                   deleteNotification(n.id);
+                                 }}
+                                 className="opacity-0 group-hover:opacity-100 p-1 hover:bg-slate-200 rounded text-slate-400 hover:text-slate-600 transition"
+                                 title="Remove"
+                               >
+                                 <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                               </button>
+                            </div>
                           </div>
-                          <p className="text-xs text-slate-600 leading-snug">{n.message}</p>
+                          <div className="cursor-pointer" onClick={() => markNotificationRead(n.id)}>
+                            <p className={`text-xs leading-snug ${!n.isRead ? 'text-slate-900 font-medium' : 'text-slate-500'}`}>
+                              {n.message}
+                            </p>
+                          </div>
                         </div>
                       ))
                     )}
                   </div>
+                  {notifications.length > 5 && (
+                    <div className="p-2 border-top bg-slate-50 text-center">
+                       <p className="text-[10px] text-slate-400 italic">Showing your latest {notifications.length} notifications</p>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

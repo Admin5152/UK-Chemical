@@ -45,6 +45,7 @@ export interface LogEntry {
 
 export interface Notification {
   id: string;
+  user_id?: string;
   title: string;
   message: string;
   type: 'WARNING' | 'DANGER' | 'INFO';
@@ -90,6 +91,7 @@ export interface FilterState {
 
 export interface ApprovalRequest {
   id: string;
+  user_id?: string;
   requested_by_name: string;
   requested_by_email: string;
   action_type: 'edit' | 'delete';

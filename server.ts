@@ -93,6 +93,19 @@ async function startServer() {
         .eq("id", id);
 
       if (updateError) throw updateError;
+      
+      // Insert Notification for Employee in DB
+      try {
+        await supabase.from('notifications').insert({
+          user_id: request.user_id,
+          title: `Request ${status.toUpperCase()}`,
+          message: `Your request to ${request.action_type} the product "${request.product_name}" was ${status}.`,
+          type: status === 'approved' ? 'INFO' : 'DANGER',
+          is_read: false
+        });
+      } catch (notifErr) {
+        console.error("Failed to insert notification:", notifErr);
+      }
 
       // Send confirmation email to Employee
       await resend.emails.send({

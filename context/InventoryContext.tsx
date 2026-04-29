@@ -34,6 +34,7 @@ interface InventoryContextType {
   adjustStock: (productId: string, location: Location, delta: number, reason: string) => Promise<void>;
   transferStock: (productId: string, from: Location, to: Location, amount: number) => Promise<void>;
   markNotificationRead: (id: string) => void;
+  deleteNotification: (id: string) => Promise<void>;
   loading: boolean;
   error: string | null;
   clearData: () => void;
@@ -280,8 +281,20 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
         }
       })();
 
-      const [productsRes, suppliersRes, logsRes, usersRes, settingsRes, invoicesRes, companyRes, approvalsRes] = await Promise.all([
-        productsPromise, suppliersPromise, logsPromise, usersPromise, settingsPromise, invoicesPromise, companyPromise, approvalsPromise
+      const notificationsPromise = (async () => {
+        try {
+          const res = await supabase.from('notifications')
+            .select('*')
+            .eq('user_id', currentUserIdRef.current)
+            .order('created_at', { ascending: false });
+          return { ...res, type: 'notifications' };
+        } catch (err) {
+          return { data: null, error: err, type: 'notifications' };
+        }
+      })();
+
+      const [productsRes, suppliersRes, logsRes, usersRes, settingsRes, invoicesRes, companyRes, approvalsRes, notificationsRes] = await Promise.all([
+        productsPromise, suppliersPromise, logsPromise, usersPromise, settingsPromise, invoicesPromise, companyPromise, approvalsPromise, notificationsPromise
       ]);
 
       if (productsRes.data) {
@@ -372,6 +385,25 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
         setApprovalRequests(approvalsRes.data);
       }
 
+      if (notificationsRes.data) {
+        const dbNotifs = notificationsRes.data.map((n: any) => ({
+          id: n.id,
+          user_id: n.user_id,
+          title: n.title,
+          message: n.message,
+          type: n.type as 'WARNING' | 'DANGER' | 'INFO',
+          date: n.created_at,
+          isRead: n.is_read
+        }));
+        
+        // Merge with computed notifications
+        setNotifications(prev => {
+          // Keep persistent ones from DB and add current computed ones
+          // To avoid duplicates of computed ones, we only add DB ones here and depend on checkNotifications for computed
+          return dbNotifs;
+        });
+      }
+
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       console.error("Error fetching data:", message);
@@ -420,7 +452,12 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
         });
       }
     });
-    setNotifications(newNotifs);
+
+    // Merge DB notifications in
+    setNotifications(prev => {
+      const dbNotifs = prev.filter(n => !n.id.startsWith('low-') && !n.id.startsWith('exp-') && !n.id.startsWith('soon-'));
+      return [...dbNotifs, ...newNotifs];
+    });
   };
 
   // --- Actions ---
@@ -747,8 +784,23 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
     setCompanyInfo(info);
   };
 
-  const markNotificationRead = (id: string) => {
+  const markNotificationRead = async (id: string) => {
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n));
+    
+    // If it's a DB notification (uuid usually), update it
+    const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+    if (isUUID(id)) {
+      await supabase.from('notifications').update({ is_read: true }).eq('id', id);
+    }
+  };
+
+  const deleteNotification = async (id: string) => {
+    setNotifications(prev => prev.filter(n => n.id !== id));
+    
+    const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+    if (isUUID(id)) {
+      await supabase.from('notifications').delete().eq('id', id);
+    }
   };
 
   const login = async (email: string, pass: string) => {
@@ -769,6 +821,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
     if (!currentUser) return false;
 
     const requestData = {
+      user_id: currentUser.id,
       requested_by_name: currentUser.name,
       requested_by_email: currentUser.email,
       action_type: actionType,
@@ -860,7 +913,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       addSupplier, updateSupplier, deleteSupplier,
       addInvoice, updateInvoice, deleteInvoice,
       createApprovalRequest, resolveApprovalRequest, isActionUnlocked,
-      adjustStock, transferStock, markNotificationRead,
+      adjustStock, transferStock, markNotificationRead, deleteNotification,
       loading, error, clearData, dbHealth
     }}>
       {children}
