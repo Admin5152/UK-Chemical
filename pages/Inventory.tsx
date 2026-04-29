@@ -335,7 +335,7 @@ export const Inventory = () => {
             </div>
             <h3 className="text-xl font-bold text-slate-800 mb-2">Request Sent</h3>
             <p className="text-slate-600 mb-6">
-              Your manager (sethagyeimensah2@gmail.com) has been notified and must approve the <strong>{confirmModal.type || 'action'}</strong> for <strong>{approvalSentModal.productName}</strong> before it proceeds.
+              Your manager has been notified and must approve the <strong>{confirmModal.type || 'action'}</strong> for <strong>{approvalSentModal.productName}</strong> before it proceeds.
             </p>
             <button 
               onClick={() => setApprovalSentModal({ isOpen: false, productName: '' })}
