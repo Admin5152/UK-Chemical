@@ -771,16 +771,20 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
   const deleteUser = async (userId: string) => {
     if (currentUser?.role?.toUpperCase() !== 'MANAGER') return;
     if (userId === currentUser.id) {
-      alert("You cannot remove yourself.");
+      alert("You cannot remove your own account");
       return;
     }
 
-    const { error } = await supabase.from('profiles').delete().eq('id', userId);
+    const { error } = await supabase.rpc('delete_user_profile', { user_id: userId });
     if (error) {
-      alert("Failed to remove employee: " + error.message);
+      console.error("Deletion error:", error);
+      alert("Failed to remove member. Please try again.");
       return;
     }
+    
+    // Remove from local state immediately
     setUsers(prev => prev.filter(u => u.id !== userId));
+    alert("Team member removed successfully");
   };
 
   const setExpiryThreshold = async (days: number) => {
