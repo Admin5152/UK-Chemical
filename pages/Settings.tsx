@@ -194,9 +194,9 @@ GRANT ALL ON public.invoices TO anon, authenticated, service_role;
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <Shield size={16} className={user.role === 'MANAGER' ? 'text-brand-600' : 'text-slate-400'} />
+                      <Shield size={16} className={user.role?.toUpperCase() === 'MANAGER' ? 'text-brand-600' : 'text-slate-400'} />
                       <select 
-                        value={user.role}
+                        value={user.role?.toUpperCase()}
                         onChange={(e) => handleRoleChange(user.id, e.target.value)}
                         disabled={user.id === currentUser?.id}
                         className={`text-sm font-medium bg-white text-slate-900 border border-slate-200 rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-brand-500 ${
@@ -204,7 +204,8 @@ GRANT ALL ON public.invoices TO anon, authenticated, service_role;
                         }`}
                       >
                         <option value="MANAGER">Manager</option>
-                        <option value="EMPLOYEE">Employee</option>
+                        <option value="STAFF">Staff</option>
+                        <option value="STAFF">Employee</option>
                       </select>
                       {user.id !== currentUser?.id && (
                         <button

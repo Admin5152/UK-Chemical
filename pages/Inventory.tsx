@@ -68,7 +68,7 @@ export const Inventory = () => {
   // --- Modals (Simplified inline for XML constraints, ideally separate components) ---
 
   const handleEditClick = (p: Product) => {
-    if (currentUser?.role === 'MANAGER') {
+    if (currentUser?.role?.toUpperCase() === 'MANAGER') {
       setConfirmModal({ isOpen: true, type: 'edit', product: p });
     } else {
       // Check if unlocked
@@ -85,7 +85,7 @@ export const Inventory = () => {
   };
 
   const handleDeleteClick = (p: Product) => {
-    if (currentUser?.role === 'MANAGER') {
+    if (currentUser?.role?.toUpperCase() === 'MANAGER') {
       setConfirmModal({ isOpen: true, type: 'delete', product: p });
     } else {
       // Check if unlocked
@@ -228,14 +228,14 @@ export const Inventory = () => {
                     <div className="flex items-center justify-end gap-2">
                       <button 
                         onClick={() => {
-                          if (currentUser?.role === 'MANAGER') {
+                          if (currentUser?.role?.toUpperCase() === 'MANAGER') {
                             handleTransferClick(p);
                           } else {
                             alert("⛔ Access Denied: Only managers can reorder or transfer stock.");
                           }
                         }} 
-                        className={`p-2 rounded-full transition ${currentUser?.role === 'MANAGER' ? 'text-slate-400 hover:text-brand-600 hover:bg-brand-50' : 'text-slate-200 cursor-not-allowed'}`}
-                        title={currentUser?.role === 'MANAGER' ? "Transfer Stock" : "Manager permission required to perform this action."}
+                        className={`p-2 rounded-full transition ${currentUser?.role?.toUpperCase() === 'MANAGER' ? 'text-slate-400 hover:text-brand-600 hover:bg-brand-50' : 'text-slate-200 cursor-not-allowed'}`}
+                        title={currentUser?.role?.toUpperCase() === 'MANAGER' ? "Transfer Stock" : "Manager permission required to perform this action."}
                       >
                         <ArrowRightLeft size={16} />
                       </button>
@@ -244,8 +244,8 @@ export const Inventory = () => {
                         onClick={() => {
                           handleEditClick(p);
                         }} 
-                        className={`p-2 rounded-full transition ${currentUser?.role === 'MANAGER' || isActionUnlocked('edit', p.id) ? 'text-slate-400 hover:text-blue-600 hover:bg-blue-50' : 'text-slate-300 hover:text-amber-600 hover:bg-amber-50'}`}
-                        title={currentUser?.role === 'MANAGER' ? "Edit" : (isActionUnlocked('edit', p.id) ? "Action Unlocked" : "Request Management Approval")}
+                        className={`p-2 rounded-full transition ${currentUser?.role?.toUpperCase() === 'MANAGER' || isActionUnlocked('edit', p.id) ? 'text-slate-400 hover:text-blue-600 hover:bg-blue-50' : 'text-slate-300 hover:text-amber-600 hover:bg-amber-50'}`}
+                        title={currentUser?.role?.toUpperCase() === 'MANAGER' ? "Edit" : (isActionUnlocked('edit', p.id) ? "Action Unlocked" : "Request Management Approval")}
                       >
                         <Edit size={16} />
                       </button>
@@ -254,8 +254,8 @@ export const Inventory = () => {
                         onClick={() => {
                           handleDeleteClick(p);
                         }} 
-                        className={`p-2 rounded-full transition ${currentUser?.role === 'MANAGER' || isActionUnlocked('delete', p.id) ? 'text-slate-400 hover:text-red-600 hover:bg-red-50' : 'text-slate-300 hover:text-amber-600 hover:bg-amber-50'}`}
-                        title={currentUser?.role === 'MANAGER' ? "Delete" : (isActionUnlocked('delete', p.id) ? "Action Unlocked" : "Request Management Approval")}
+                        className={`p-2 rounded-full transition ${currentUser?.role?.toUpperCase() === 'MANAGER' || isActionUnlocked('delete', p.id) ? 'text-slate-400 hover:text-red-600 hover:bg-red-50' : 'text-slate-300 hover:text-amber-600 hover:bg-amber-50'}`}
+                        title={currentUser?.role?.toUpperCase() === 'MANAGER' ? "Delete" : (isActionUnlocked('delete', p.id) ? "Action Unlocked" : "Request Management Approval")}
                       >
                         <Trash2 size={16} />
                       </button>
@@ -282,7 +282,7 @@ export const Inventory = () => {
           onClose={() => setIsProductModalOpen(false)} 
           existingProduct={editingProduct}
           onSubmit={editingProduct ? updateProduct : addProduct}
-          isReadOnly={currentUser.role !== 'MANAGER'}
+          isReadOnly={currentUser.role?.toUpperCase() !== 'MANAGER'}
         />
       )}
 

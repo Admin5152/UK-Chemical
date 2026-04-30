@@ -165,7 +165,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
           id: userId,
           email: email,
           full_name: 'Staff Member',
-          role: isSuperAdmin ? 'MANAGER' : 'EMPLOYEE'
+          role: isSuperAdmin ? 'MANAGER' : 'STAFF'
         };
         // Try to create profile
         try {
@@ -513,7 +513,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
   };
 
   const updateProduct = async (product: Product): Promise<boolean> => {
-    if (currentUser?.role !== 'MANAGER') {
+    if (currentUser?.role?.toUpperCase() !== 'MANAGER') {
       alert("Only Managers can update products.");
       return false;
     }
@@ -546,7 +546,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
   };
 
   const deleteProduct = async (id: string): Promise<boolean> => {
-    if (currentUser?.role !== 'MANAGER') {
+    if (currentUser?.role?.toUpperCase() !== 'MANAGER') {
       alert("Only Managers can delete products.");
       return false;
     }
@@ -615,7 +615,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
   };
 
   const updateInvoice = async (invoice: Invoice): Promise<boolean> => {
-    if (currentUser?.role !== 'MANAGER') {
+    if (currentUser?.role?.toUpperCase() !== 'MANAGER') {
       alert("Only Managers can update invoices.");
       return false;
     }
@@ -643,7 +643,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
   };
 
   const deleteInvoice = async (id: string): Promise<boolean> => {
-    if (currentUser?.role !== 'MANAGER') {
+    if (currentUser?.role?.toUpperCase() !== 'MANAGER') {
       alert("Only Managers can delete invoices.");
       return false;
     }
@@ -660,7 +660,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
   };
 
   const adjustStock = async (productId: string, location: Location, delta: number, reason: string) => {
-    if (currentUser?.role !== 'MANAGER') {
+    if (currentUser?.role?.toUpperCase() !== 'MANAGER') {
       alert("⛔ Access Denied: Only managers can reorder or adjust stock.");
       return;
     }
@@ -685,7 +685,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
   };
 
   const transferStock = async (productId: string, from: Location, to: Location, amount: number) => {
-    if (currentUser?.role !== 'MANAGER') {
+    if (currentUser?.role?.toUpperCase() !== 'MANAGER') {
       alert("⛔ Access Denied: Only managers can transfer stock.");
       return;
     }
@@ -769,7 +769,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
   };
 
   const deleteUser = async (userId: string) => {
-    if (currentUser?.role !== 'MANAGER') return;
+    if (currentUser?.role?.toUpperCase() !== 'MANAGER') return;
     if (userId === currentUser.id) {
       alert("You cannot remove yourself.");
       return;
@@ -870,14 +870,18 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
   };
 
   const resolveApprovalRequest = async (requestId: string, status: 'approved' | 'denied') => {
-    if (currentUser?.role !== 'MANAGER') return;
+    if (currentUser?.role?.toUpperCase() !== 'MANAGER') return;
+
+    // Get the request info from local state (it's faster than querying DB again)
+    const req = approvalRequests.find(r => r.id === requestId);
+    if (!req) return;
 
     const { error } = await supabase
       .from('approval_requests')
       .update({ 
         status, 
         resolved_at: new Date().toISOString(), 
-        resolved_by: 'Manager' 
+        resolved_by: currentUser.name || 'Manager' 
       })
       .eq('id', requestId);
 
@@ -886,16 +890,29 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
       return;
     }
 
+    // Add persistent notification for the requesting user
+    try {
+      await supabase.from('notifications').insert({
+        user_id: req.user_id,
+        title: status === 'approved' ? 'Request Approved' : 'Request Denied',
+        message: `Your request to ${req.action_type} "${req.product_name}" was ${status}.`,
+        type: status === 'approved' ? 'INFO' : 'DANGER',
+        is_read: false
+      });
+    } catch (e) {
+      console.error("Failed to add notification", e);
+    }
+
     setApprovalRequests(prev => prev.map(r => r.id === requestId ? { 
       ...r, 
       status, 
       resolved_at: new Date().toISOString(), 
-      resolved_by: 'Manager' 
+      resolved_by: currentUser.name || 'Manager' 
     } : r));
   };
 
   const isActionUnlocked = (actionType: 'edit' | 'delete', productId: string): boolean => {
-    if (!currentUser || currentUser.role === 'MANAGER') return true;
+    if (!currentUser || currentUser.role?.toUpperCase() === 'MANAGER') return true;
     
     // Find an approved request for this product and action by this user in the last 24h
     const oneDayAgo = new Date();

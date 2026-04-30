@@ -577,28 +577,28 @@ export const Invoices = () => {
                     
                     <button 
                       onClick={() => {
-                        if (currentUser?.role === 'MANAGER') {
+                        if (currentUser?.role?.toUpperCase() === 'MANAGER') {
                           handleEdit(inv);
                         } else {
                           alert("⛔ Access Denied: Only managers can edit or delete records. Please contact your manager.");
                         }
                       }} 
-                      className={`p-2 rounded-md transition ${currentUser?.role === 'MANAGER' ? 'text-slate-600 hover:bg-slate-100' : 'text-slate-200 cursor-not-allowed'}`}
-                      title={currentUser?.role === 'MANAGER' ? "Edit" : "Manager permission required to perform this action."}
+                      className={`p-2 rounded-md transition ${currentUser?.role?.toUpperCase() === 'MANAGER' ? 'text-slate-600 hover:bg-slate-100' : 'text-slate-200 cursor-not-allowed'}`}
+                      title={currentUser?.role?.toUpperCase() === 'MANAGER' ? "Edit" : "Manager permission required to perform this action."}
                     >
                       <Edit size={18} />
                     </button>
                     
                     <button 
                       onClick={() => {
-                        if (currentUser?.role === 'MANAGER') {
+                        if (currentUser?.role?.toUpperCase() === 'MANAGER') {
                           handleDelete(inv.id);
                         } else {
                           alert("⛔ Access Denied: Only managers can edit or delete records. Please contact your manager.");
                         }
                       }} 
-                      className={`p-2 rounded-md transition ${currentUser?.role === 'MANAGER' ? 'text-red-600 hover:bg-red-50' : 'text-slate-200 cursor-not-allowed'}`}
-                      title={currentUser?.role === 'MANAGER' ? "Delete" : "Manager permission required to perform this action."}
+                      className={`p-2 rounded-md transition ${currentUser?.role?.toUpperCase() === 'MANAGER' ? 'text-red-600 hover:bg-red-50' : 'text-slate-200 cursor-not-allowed'}`}
+                      title={currentUser?.role?.toUpperCase() === 'MANAGER' ? "Delete" : "Manager permission required to perform this action."}
                     >
                       <Trash2 size={18} />
                     </button>

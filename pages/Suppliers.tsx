@@ -86,27 +86,27 @@ export const Suppliers = () => {
                 <div className="flex gap-2">
                   <button 
                     onClick={() => {
-                      if (currentUser?.role === 'MANAGER') {
+                      if (currentUser?.role?.toUpperCase() === 'MANAGER') {
                         handleEdit(supplier);
                       } else {
                         alert("⛔ Access Denied: Only managers can edit or delete records. Please contact your manager.");
                       }
                     }} 
-                    className={`p-2 rounded-md transition shadow-sm ${currentUser?.role === 'MANAGER' ? 'bg-blue-50 text-blue-600 hover:bg-blue-100' : 'bg-slate-50 text-slate-200 cursor-not-allowed'}`}
-                    title={currentUser?.role === 'MANAGER' ? "Edit Supplier" : "Manager permission required to perform this action."}
+                    className={`p-2 rounded-md transition shadow-sm ${currentUser?.role?.toUpperCase() === 'MANAGER' ? 'bg-blue-50 text-blue-600 hover:bg-blue-100' : 'bg-slate-50 text-slate-200 cursor-not-allowed'}`}
+                    title={currentUser?.role?.toUpperCase() === 'MANAGER' ? "Edit Supplier" : "Manager permission required to perform this action."}
                   >
                     <Edit size={16} />
                   </button>
                   <button 
                     onClick={() => {
-                      if (currentUser?.role === 'MANAGER') {
+                      if (currentUser?.role?.toUpperCase() === 'MANAGER') {
                         handleDelete(supplier.id);
                       } else {
                         alert("⛔ Access Denied: Only managers can edit or delete records. Please contact your manager.");
                       }
                     }} 
-                    className={`p-2 rounded-md transition shadow-sm ${currentUser?.role === 'MANAGER' ? 'bg-red-50 text-red-600 hover:bg-red-100' : 'bg-slate-50 text-slate-200 cursor-not-allowed'}`}
-                    title={currentUser?.role === 'MANAGER' ? "Delete Supplier" : "Manager permission required to perform this action."}
+                    className={`p-2 rounded-md transition shadow-sm ${currentUser?.role?.toUpperCase() === 'MANAGER' ? 'bg-red-50 text-red-600 hover:bg-red-100' : 'bg-slate-50 text-slate-200 cursor-not-allowed'}`}
+                    title={currentUser?.role?.toUpperCase() === 'MANAGER' ? "Delete Supplier" : "Manager permission required to perform this action."}
                   >
                     <Trash2 size={16} />
                   </button>
@@ -150,7 +150,7 @@ export const Suppliers = () => {
           onClose={() => setIsModalOpen(false)} 
           existingSupplier={editingSupplier}
           onSubmit={editingSupplier ? updateSupplier : addSupplier}
-          isReadOnly={currentUser?.role !== 'MANAGER' && !!editingSupplier}
+          isReadOnly={currentUser?.role?.toUpperCase() !== 'MANAGER' && !!editingSupplier}
         />
       )}
     </div>

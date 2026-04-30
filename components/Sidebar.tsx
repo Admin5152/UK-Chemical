@@ -20,7 +20,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView, i
     { id: 'invoices', label: 'Invoices', icon: FileText },
   ];
 
-  if (currentUser?.role === 'MANAGER') {
+  if (currentUser?.role?.toUpperCase() === 'MANAGER') {
     menuItems.push({ id: 'approvals', label: 'Approvals', icon: CheckCircle2 });
     menuItems.push({ id: 'settings', label: 'Settings', icon: Settings });
   }

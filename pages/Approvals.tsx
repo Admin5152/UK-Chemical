@@ -5,7 +5,7 @@ import { CheckCircle2, XCircle, Clock, User, Package, Calendar } from 'lucide-re
 export const Approvals = () => {
   const { approvalRequests, resolveApprovalRequest, currentUser } = useInventory();
 
-  if (currentUser?.role !== 'MANAGER') {
+  if (currentUser?.role?.toUpperCase() !== 'MANAGER') {
     return (
       <div className="flex flex-col items-center justify-center h-[60vh] text-slate-500">
         <XCircle size={48} className="text-red-500 mb-4" />

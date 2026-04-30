@@ -51,7 +51,7 @@ const MainApp = ({ splashFinished }: { splashFinished: boolean }) => {
 
   const renderView = () => {
     // SECURITY GUARD: Prevent non-managers from accessing Settings or Approvals
-    if ((currentView === 'settings' || currentView === 'approvals') && currentUser.role !== 'MANAGER') {
+    if ((currentView === 'settings' || currentView === 'approvals') && currentUser.role?.toUpperCase() !== 'MANAGER') {
       return <Dashboard setView={setCurrentView} />;
     }
 
