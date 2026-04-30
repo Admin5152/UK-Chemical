@@ -17,6 +17,7 @@ interface InventoryContextType {
   signup: (email: string, pass: string, name: string) => Promise<void>;
   logout: () => Promise<void>;
   updateUserRole: (userId: string, newRole: UserRole) => Promise<void>;
+  deleteUser: (userId: string) => Promise<void>;
   setExpiryThreshold: (days: number) => Promise<void>;
   updateCompanyInfo: (info: CompanyInfo) => Promise<void>;
   addProduct: (product: Product) => Promise<boolean>;
@@ -767,6 +768,21 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
     }
   };
 
+  const deleteUser = async (userId: string) => {
+    if (currentUser?.role !== 'MANAGER') return;
+    if (userId === currentUser.id) {
+      alert("You cannot remove yourself.");
+      return;
+    }
+
+    const { error } = await supabase.from('profiles').delete().eq('id', userId);
+    if (error) {
+      alert("Failed to remove employee: " + error.message);
+      return;
+    }
+    setUsers(prev => prev.filter(u => u.id !== userId));
+  };
+
   const setExpiryThreshold = async (days: number) => {
     const { error } = await supabase.from('app_settings').upsert({ key: 'expiry_threshold', value: days });
     if (!error) {
@@ -908,7 +924,7 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
   return (
     <InventoryContext.Provider value={{
       currentUser, users, products, suppliers, invoices, logs, notifications, approvalRequests, expiryThreshold, companyInfo,
-      login, signup, logout, updateUserRole, setExpiryThreshold, updateCompanyInfo,
+      login, signup, logout, updateUserRole, deleteUser, setExpiryThreshold, updateCompanyInfo,
       addProduct, updateProduct, deleteProduct,
       addSupplier, updateSupplier, deleteSupplier,
       addInvoice, updateInvoice, deleteInvoice,

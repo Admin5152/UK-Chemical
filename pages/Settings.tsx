@@ -2,13 +2,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useInventory } from '../context/InventoryContext';
 import { UserRole } from '../types';
-import { Users, Shield, Calendar, Settings as SettingsIcon, Database, AlertTriangle, Check, Copy, Building, Save, Download, FileText, Printer } from 'lucide-react';
+import { Users, Shield, Calendar, Settings as SettingsIcon, Database, AlertTriangle, Check, Copy, Building, Save, Download, FileText, Printer, Trash2 } from 'lucide-react';
 
 // Declare html2pdf for TypeScript
 declare var html2pdf: any;
 
 export const Settings = () => {
-  const { users, currentUser, updateUserRole, expiryThreshold, setExpiryThreshold, dbHealth, companyInfo, updateCompanyInfo, products, suppliers, invoices } = useInventory();
+  const { users, currentUser, updateUserRole, deleteUser, expiryThreshold, setExpiryThreshold, dbHealth, companyInfo, updateCompanyInfo, products, suppliers, invoices } = useInventory();
   const [copied, setCopied] = useState(false);
   
   // Company Info State
@@ -206,6 +206,19 @@ GRANT ALL ON public.invoices TO anon, authenticated, service_role;
                         <option value="MANAGER">Manager</option>
                         <option value="EMPLOYEE">Employee</option>
                       </select>
+                      {user.id !== currentUser?.id && (
+                        <button
+                          onClick={() => {
+                            if (window.confirm(`Are you sure you want to remove ${user.name}? This will revoke their access to the system.`)) {
+                              deleteUser(user.id);
+                            }
+                          }}
+                          className="p-1.5 text-red-500 hover:bg-red-50 rounded-md transition"
+                          title="Remove user"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}
