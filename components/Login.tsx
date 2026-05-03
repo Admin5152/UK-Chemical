@@ -105,6 +105,11 @@ export const Login = () => {
                 {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
               </button>
             </div>
+            <div className="flex justify-end mt-1">
+              <a href="/forgot-password" className="text-[11px] text-slate-400 hover:text-brand-600 transition font-medium">
+                Forgot Password?
+              </a>
+            </div>
           </div>
 
           <button 

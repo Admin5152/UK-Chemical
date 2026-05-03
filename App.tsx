@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import { InventoryProvider, useInventory } from './context/InventoryContext';
 import { Sidebar } from './components/Sidebar';
 import { Dashboard } from './pages/Dashboard';
@@ -8,6 +9,8 @@ import { Settings } from './pages/Settings';
 import { Suppliers } from './pages/Suppliers';
 import { Invoices } from './pages/Invoices';
 import { Approvals } from './pages/Approvals';
+import { ForgotPassword } from './pages/ForgotPassword';
+import { ResetPassword } from './pages/ResetPassword';
 import { Login } from './components/Login';
 import { SplashScreen } from './components/SplashScreen';
 import { Bell, Loader2, Menu } from 'lucide-react';
@@ -202,17 +205,17 @@ const App = () => {
   const [splashFinished, setSplashFinished] = useState(false);
 
   return (
-    <>
-      {/* Splash Screen shows on top of everything until it calls onComplete */}
+    <InventoryProvider>
       {!splashFinished && (
         <SplashScreen onComplete={() => setSplashFinished(true)} />
       )}
       
-      {/* The Provider is mounted immediately so data starts loading BEHIND the splash screen */}
-      <InventoryProvider>
-        <MainApp splashFinished={splashFinished} />
-      </InventoryProvider>
-    </>
+      <Routes>
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
+        <Route path="*" element={<MainApp splashFinished={splashFinished} />} />
+      </Routes>
+    </InventoryProvider>
   );
 };
 
